@@ -1,11 +1,9 @@
-use std::{collections::BTreeMap, sync::Arc};
-
-use futures::StreamExt;
-
 use color_eyre::{eyre::Context, Result};
 
 use near_jsonrpc_client::JsonRpcClient;
 use near_token::NearToken;
+
+use std::{collections::BTreeMap, sync::Arc};
 use tokio::sync::Mutex;
 
 #[easy_ext::ext(RpcQueryResponseExt)]
@@ -67,22 +65,19 @@ async fn get_validators(
                 .map(|validator| validator.account_id),
         )
         .chain(
-            epoch_validator_info
-                .current_fishermen
-                .into_iter()
-                .map(|validator| validator.take_account_id()),
+            epoch_validator_info.current_fishermen.into_iter().map(
+                near_primitives::views::validator_stake_view::ValidatorStakeView::take_account_id,
+            ),
         )
         .chain(
-            epoch_validator_info
-                .next_fishermen
-                .into_iter()
-                .map(|validator| validator.take_account_id()),
+            epoch_validator_info.next_fishermen.into_iter().map(
+                near_primitives::views::validator_stake_view::ValidatorStakeView::take_account_id,
+            ),
         )
         .chain(
-            epoch_validator_info
-                .current_proposals
-                .into_iter()
-                .map(|validator| validator.take_account_id()),
+            epoch_validator_info.current_proposals.into_iter().map(
+                near_primitives::views::validator_stake_view::ValidatorStakeView::take_account_id,
+            ),
         )
         .chain(
             epoch_validator_info
@@ -130,50 +125,6 @@ async fn get_delegators(
     }
 }
 
-// I was trying to use .for_each_concurrent() but it was not working for me
-
-// fn main() -> Result<()> {
-//     let json_rpc_client = JsonRpcClient::connect("https://rpc.mainnet.near.org");
-//     // let json_rpc_client = JsonRpcClient::connect("https://archival-rpc.mainnet.near.org");
-
-//     let runtime = tokio::runtime::Builder::new_multi_thread()
-//         .enable_all()
-//         .build()?;
-//     let concurrency = 10;
-
-//     let validators = runtime.block_on(get_validators_stake(&json_rpc_client))?;
-
-//     let delegators_staked_balance = Mutex::new(BTreeMap::new());
-
-//     runtime.block_on(
-//         futures::stream::iter(validators.into_keys())
-//             .map(|validator_account_id| async {
-//                 let delegators = get_delegators(&json_rpc_client, validator_account_id).await?;
-//                 for delegator in delegators {
-//                     let mut locked_balance = delegators_staked_balance.lock().await;
-//                     let entry = locked_balance
-//                         .entry(delegator.account_id)
-//                         .or_insert_with(|| NearToken::from_yoctonear(0));
-
-//                     *entry = entry.saturating_add(
-//                         delegator
-//                             .staked_balance
-//                             .saturating_add(delegator.unstaked_balance),
-//                     );
-//                 }
-//                 Ok::<_, color_eyre::eyre::Report>(())
-//             })
-//             .buffer_unordered(concurrency)
-//             .collect::<Vec<_>>(),
-//     );
-
-//     println!("{:#?}", delegators_staked_balance);
-
-//     // println!("{:#?}", delegated_stake);
-
-//     Ok(())
-// }
-
 #[tokio::main]
 async fn main() -> Result<()> {
     let json_rpc_client = JsonRpcClient::connect("https://rpc.mainnet.near.org");
@@ -181,41 +132,6 @@ async fn main() -> Result<()> {
     let validators = get_validators(&json_rpc_client).await?;
     let mut handles = Vec::new();
     let delegators_staked_balance = Arc::new(Mutex::new(BTreeMap::new()));
-
-    // futures::stream::iter(validators)
-    //     .for_each_concurrent(10, |validator_account_id| async {
-    //         let json_rpc_client = json_rpc_client.clone();
-    //         let delegators_staked_balance = delegators_staked_balance.clone();
-    //         let delegators = get_delegators(&json_rpc_client, validator_account_id)
-    //             .await
-    //             .unwrap();
-    //         for delegator in delegators {
-    //             let staked_balance = NearToken::from_yoctonear(
-    //                 delegator
-    //                     .staked_balance
-    //                     .parse::<u128>()
-    //                     .wrap_err("Failed to parse staked balance")
-    //                     .unwrap(),
-    //             );
-    //             let unstaked_balance = NearToken::from_yoctonear(
-    //                 delegator
-    //                     .unstaked_balance
-    //                     .parse::<u128>()
-    //                     .wrap_err("Failed to parse unstaked balance")
-    //                     .unwrap(),
-    //             );
-    //             let mut locked_balance = delegators_staked_balance.lock().await;
-    //             locked_balance
-    //                 .entry(delegator.account_id)
-    //                 .and_modify(|balance: &mut NearToken| {
-    //                     *balance =
-    //                         balance.saturating_add(staked_balance.saturating_add(unstaked_balance));
-    //                 })
-    //                 .or_insert_with(|| staked_balance.saturating_add(unstaked_balance));
-    //         }
-    //         // Ok::<_, color_eyre::eyre::Report>(())
-    //     })
-    //     .await;
 
     for validator_account_id in validators {
         let json_rpc_client = json_rpc_client.clone();
