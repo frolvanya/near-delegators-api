@@ -1,5 +1,7 @@
 use std::{collections::BTreeMap, sync::Arc};
 
+use futures::StreamExt;
+
 use color_eyre::{eyre::Context, Result};
 
 use near_jsonrpc_client::JsonRpcClient;
@@ -43,11 +45,9 @@ struct Delegator {
     staked_balance: String,
 }
 
-async fn get_validators_stake(
+async fn get_validators(
     json_rpc_client: &JsonRpcClient,
-) -> color_eyre::eyre::Result<
-    std::collections::HashMap<near_primitives::types::AccountId, near_primitives::types::Balance>,
-> {
+) -> color_eyre::eyre::Result<Vec<near_primitives::types::AccountId>> {
     let epoch_validator_info = json_rpc_client
         .call(
             &near_jsonrpc_client::methods::validators::RpcValidatorRequest {
@@ -57,30 +57,38 @@ async fn get_validators_stake(
         .await?;
 
     Ok(epoch_validator_info
-        .current_proposals
+        .current_validators
         .into_iter()
-        .map(|validator_stake_view| {
-            let validator_stake = validator_stake_view.into_validator_stake();
-            validator_stake.account_and_stake()
-        })
-        .chain(epoch_validator_info.current_validators.into_iter().map(
-            |current_epoch_validator_info| {
-                (
-                    current_epoch_validator_info.account_id,
-                    current_epoch_validator_info.stake,
-                )
-            },
-        ))
+        .map(|validator| validator.account_id)
         .chain(
             epoch_validator_info
                 .next_validators
                 .into_iter()
-                .map(|next_epoch_validator_info| {
-                    (
-                        next_epoch_validator_info.account_id,
-                        next_epoch_validator_info.stake,
-                    )
-                }),
+                .map(|validator| validator.account_id),
+        )
+        .chain(
+            epoch_validator_info
+                .current_fishermen
+                .into_iter()
+                .map(|validator| validator.take_account_id()),
+        )
+        .chain(
+            epoch_validator_info
+                .next_fishermen
+                .into_iter()
+                .map(|validator| validator.take_account_id()),
+        )
+        .chain(
+            epoch_validator_info
+                .current_proposals
+                .into_iter()
+                .map(|validator| validator.take_account_id()),
+        )
+        .chain(
+            epoch_validator_info
+                .prev_epoch_kickout
+                .into_iter()
+                .map(|validator| validator.account_id),
         )
         .collect())
 }
@@ -170,11 +178,46 @@ async fn get_delegators(
 async fn main() -> Result<()> {
     let json_rpc_client = JsonRpcClient::connect("https://rpc.mainnet.near.org");
 
-    let validators = get_validators_stake(&json_rpc_client).await?;
+    let validators = get_validators(&json_rpc_client).await?;
     let mut handles = Vec::new();
     let delegators_staked_balance = Arc::new(Mutex::new(BTreeMap::new()));
 
-    for validator_account_id in validators.into_keys() {
+    // futures::stream::iter(validators)
+    //     .for_each_concurrent(10, |validator_account_id| async {
+    //         let json_rpc_client = json_rpc_client.clone();
+    //         let delegators_staked_balance = delegators_staked_balance.clone();
+    //         let delegators = get_delegators(&json_rpc_client, validator_account_id)
+    //             .await
+    //             .unwrap();
+    //         for delegator in delegators {
+    //             let staked_balance = NearToken::from_yoctonear(
+    //                 delegator
+    //                     .staked_balance
+    //                     .parse::<u128>()
+    //                     .wrap_err("Failed to parse staked balance")
+    //                     .unwrap(),
+    //             );
+    //             let unstaked_balance = NearToken::from_yoctonear(
+    //                 delegator
+    //                     .unstaked_balance
+    //                     .parse::<u128>()
+    //                     .wrap_err("Failed to parse unstaked balance")
+    //                     .unwrap(),
+    //             );
+    //             let mut locked_balance = delegators_staked_balance.lock().await;
+    //             locked_balance
+    //                 .entry(delegator.account_id)
+    //                 .and_modify(|balance: &mut NearToken| {
+    //                     *balance =
+    //                         balance.saturating_add(staked_balance.saturating_add(unstaked_balance));
+    //                 })
+    //                 .or_insert_with(|| staked_balance.saturating_add(unstaked_balance));
+    //         }
+    //         // Ok::<_, color_eyre::eyre::Report>(())
+    //     })
+    //     .await;
+
+    for validator_account_id in validators {
         let json_rpc_client = json_rpc_client.clone();
         let delegators_staked_balance = delegators_staked_balance.clone();
 
