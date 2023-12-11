@@ -1,7 +1,6 @@
 use color_eyre::{eyre::Context, Result};
 
 use near_jsonrpc_client::JsonRpcClient;
-use near_token::NearToken;
 
 use std::{
     collections::{BTreeMap, HashSet},
@@ -39,11 +38,9 @@ impl near_primitives::views::CallResult {
     }
 }
 
-#[derive(serde::Deserialize, Debug)]
+#[derive(serde::Deserialize, Debug, PartialOrd, PartialEq)]
 struct Delegator {
     account_id: near_primitives::types::AccountId,
-    unstaked_balance: String,
-    staked_balance: String,
 }
 
 async fn get_validators(
@@ -93,13 +90,13 @@ async fn get_validators(
 
 async fn get_delegators(
     json_rpc_client: &JsonRpcClient,
-    validator_account_id: near_primitives::types::AccountId,
+    validator_account_id: &near_primitives::types::AccountId,
 ) -> Result<Vec<Delegator>> {
     let delegators_response = json_rpc_client
         .call(near_jsonrpc_client::methods::query::RpcQueryRequest {
             block_reference: near_primitives::types::BlockReference::latest(),
             request: near_primitives::views::QueryRequest::CallFunction {
-                account_id: validator_account_id,
+                account_id: validator_account_id.clone(),
                 method_name: "get_accounts".to_string(),
                 args: near_primitives::types::FunctionArgs::from(serde_json::to_vec(
                     &serde_json::json!({
@@ -134,7 +131,10 @@ async fn main() -> Result<()> {
 
     let mut checked_validators = HashSet::new();
     let validators = get_validators(&json_rpc_client).await?;
-    let delegators_staked_balance = Arc::new(Mutex::new(BTreeMap::new()));
+    let delegators = Arc::new(Mutex::new(BTreeMap::<
+        near_primitives::types::AccountId,
+        Vec<near_primitives::types::AccountId>,
+    >::new()));
 
     let mut handles = Vec::new();
     for validator_account_id in validators {
@@ -144,32 +144,17 @@ async fn main() -> Result<()> {
         checked_validators.insert(validator_account_id.clone());
 
         let json_rpc_client = json_rpc_client.clone();
-        let delegators_staked_balance = delegators_staked_balance.clone();
+        let delegators = delegators.clone();
 
         let handle = tokio::spawn(async move {
-            let delegators = get_delegators(&json_rpc_client, validator_account_id).await?;
-            for delegator in delegators {
-                let staked_balance = NearToken::from_yoctonear(
-                    delegator
-                        .staked_balance
-                        .parse::<u128>()
-                        .wrap_err("Failed to parse staked balance")?,
-                );
-                let unstaked_balance = NearToken::from_yoctonear(
-                    delegator
-                        .unstaked_balance
-                        .parse::<u128>()
-                        .wrap_err("Failed to parse unstaked balance")?,
-                );
-
-                let mut locked_balance = delegators_staked_balance.lock().await;
-                locked_balance
+            let validator_delegators =
+                get_delegators(&json_rpc_client, &validator_account_id).await?;
+            for delegator in validator_delegators {
+                let mut locked_delegators = delegators.lock().await;
+                locked_delegators
                     .entry(delegator.account_id)
-                    .and_modify(|balance: &mut NearToken| {
-                        *balance =
-                            balance.saturating_add(staked_balance.saturating_add(unstaked_balance));
-                    })
-                    .or_insert_with(|| staked_balance.saturating_add(unstaked_balance));
+                    .or_default()
+                    .push(validator_account_id.clone());
             }
             Ok::<_, color_eyre::eyre::Report>(())
         });
@@ -179,7 +164,10 @@ async fn main() -> Result<()> {
 
     futures::future::try_join_all(handles).await?;
 
-    println!("{delegators_staked_balance:#?}");
+    match serde_json::to_string_pretty(&*delegators.lock().await) {
+        Ok(json_string) => println!("{json_string}"),
+        Err(err) => color_eyre::eyre::bail!("Failed to serialize delegators: {}", err),
+    }
 
     Ok(())
 }
