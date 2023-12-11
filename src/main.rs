@@ -3,7 +3,10 @@ use color_eyre::{eyre::Context, Result};
 use near_jsonrpc_client::JsonRpcClient;
 use near_token::NearToken;
 
-use std::{collections::BTreeMap, sync::Arc};
+use std::{
+    collections::{BTreeMap, HashSet},
+    sync::Arc,
+};
 use tokio::sync::Mutex;
 
 #[easy_ext::ext(RpcQueryResponseExt)]
@@ -127,13 +130,19 @@ async fn get_delegators(
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let json_rpc_client = JsonRpcClient::connect("https://rpc.mainnet.near.org");
+    let json_rpc_client = JsonRpcClient::connect("https://archival-rpc.mainnet.near.org");
 
+    let mut checked_validators = HashSet::new();
     let validators = get_validators(&json_rpc_client).await?;
-    let mut handles = Vec::new();
     let delegators_staked_balance = Arc::new(Mutex::new(BTreeMap::new()));
 
+    let mut handles = Vec::new();
     for validator_account_id in validators {
+        if checked_validators.contains(&validator_account_id) {
+            continue;
+        }
+        checked_validators.insert(validator_account_id.clone());
+
         let json_rpc_client = json_rpc_client.clone();
         let delegators_staked_balance = delegators_staked_balance.clone();
 
