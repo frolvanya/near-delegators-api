@@ -3,16 +3,16 @@ name: Echo Hi
 on:
   workflow_dispatch:
     inputs:
-      message:
-        description: 'Custom message to echo'
+      data:
+        description: 'Additional data to process'
         required: false
-        default: 'hi'
+        default: '{}'
 
 jobs:
   echo-hi:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Echo Message
-      run: echo "${{ github.event.inputs.message }}"
+    - name: Processing Data
+      run: echo "${{ github.event.inputs.data }}"
 
