@@ -2,17 +2,11 @@ name: Echo Hi
 
 on:
   repository_dispatch:
-    inputs:
-      data:
-        description: 'Additional data to process'
-        required: false
-        default: '{}'
 
 jobs:
   echo-hi:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Processing Data
-      run: echo "${{ github.event.inputs.data }}"
-
+      - name: Processing Data
+        run: echo "${{ github.event.client_payload.data }}"
