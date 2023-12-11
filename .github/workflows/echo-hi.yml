@@ -1,0 +1,18 @@
+name: Echo Hi
+
+on:
+  workflow_dispatch:
+    inputs:
+      message:
+        description: 'Custom message to echo'
+        required: false
+        default: 'hi'
+
+jobs:
+  echo-hi:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Echo Message
+      run: echo "${{ github.event.inputs.message }}"
+
