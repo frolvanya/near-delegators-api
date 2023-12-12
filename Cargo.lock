@@ -3344,6 +3344,7 @@ dependencies = [
  "color-eyre",
  "easy-ext 1.0.1",
  "futures",
+ "near-crypto",
  "near-jsonrpc-client",
  "near-jsonrpc-primitives",
  "near-primitives",

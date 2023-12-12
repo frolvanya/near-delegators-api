@@ -9,9 +9,10 @@ edition = "2021"
 easy-ext = "1.0"
 color-eyre = "0.6"
 
-serde = "1.0"
+serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
+near-crypto = "0.17"
 near-primitives = "0.17"
 near-jsonrpc-primitives = "0.17"
 near-jsonrpc-client = "0.6"

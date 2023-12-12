@@ -91,11 +91,12 @@ async fn get_validator_delegators(
     }
 }
 
-pub async fn get_all_delegators() -> Result<BTreeMap<String, String>> {
-    let json_rpc_client = JsonRpcClient::connect("https://rpc.mainnet.near.org");
-
+pub async fn get_all_delegators(
+    json_rpc_client: &JsonRpcClient,
+) -> Result<BTreeMap<String, String>> {
     let mut checked_validators = HashSet::new();
     let validators = get_validators(&json_rpc_client).await?;
+    println!("{:?}", validators.iter().collect::<HashSet<_>>().len());
     let delegators = Arc::new(Mutex::new(BTreeMap::<AccountId, Vec<AccountId>>::new()));
 
     let mut handles = Vec::new();
@@ -140,11 +141,4 @@ pub async fn get_all_delegators() -> Result<BTreeMap<String, String>> {
             )
         })
         .collect::<BTreeMap<String, String>>())
-
-    // match serde_json::to_string_pretty(&*delegators.lock().await) {
-    //     Ok(json_string) => println!("{json_string}"),
-    //     Err(err) => color_eyre::eyre::bail!("Failed to serialize delegators: {}", err),
-    // }
-
-    // Ok(())
 }
