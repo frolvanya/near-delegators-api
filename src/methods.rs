@@ -8,7 +8,7 @@ use near_primitives::types::AccountId;
 use borsh::BorshDeserialize;
 
 use std::{
-    collections::{BTreeMap, HashSet},
+    collections::{BTreeMap, BTreeSet},
     sync::Arc,
 };
 use tokio::sync::Mutex;
@@ -97,19 +97,13 @@ pub async fn get_all_delegators(
 ) -> Result<BTreeMap<String, String>> {
     info!("Fetching all delegators");
 
-    let mut checked_validators = HashSet::new();
     let mut validators = get_validators().await?;
     validators.sort_unstable();
 
-    let delegators = Arc::new(Mutex::new(BTreeMap::<AccountId, Vec<AccountId>>::new()));
+    let delegators = Arc::new(Mutex::new(BTreeMap::<AccountId, BTreeSet<AccountId>>::new()));
 
     let mut handles = Vec::new();
     for validator_account_id in validators {
-        if checked_validators.contains(&validator_account_id) {
-            continue;
-        }
-        checked_validators.insert(validator_account_id.clone());
-
         let json_rpc_client = json_rpc_client.clone();
         let delegators = delegators.clone();
 
@@ -121,11 +115,7 @@ pub async fn get_all_delegators(
                 locked_delegators
                     .entry(delegator.account_id.clone())
                     .or_default()
-                    .push(validator_account_id.clone());
-                locked_delegators
-                    .entry(delegator.account_id.clone())
-                    .or_default()
-                    .sort_unstable();
+                    .insert(validator_account_id.clone());
             }
             Ok::<_, color_eyre::eyre::Report>(())
         });
