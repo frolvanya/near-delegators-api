@@ -11,8 +11,10 @@ color-eyre = "0.6"
 
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+base64 = "0.21"
 
-near-crypto = "0.17"
+borsh = { version = "1.2", features = ["derive"] }
+near-crypto = "0.18"
 near-primitives = "0.17"
 near-jsonrpc-primitives = "0.17"
 near-jsonrpc-client = "0.6"

@@ -5,53 +5,48 @@ use color_eyre::{eyre::Context, Result};
 use near_jsonrpc_client::JsonRpcClient;
 use near_primitives::types::AccountId;
 
+use borsh::{BorshDeserialize, BorshSerialize};
+
 use std::{
     collections::{BTreeMap, HashSet},
     sync::Arc,
 };
 use tokio::sync::Mutex;
 
-async fn get_validators(json_rpc_client: &JsonRpcClient) -> Result<Vec<AccountId>> {
-    let epoch_validator_info = json_rpc_client
-        .call(
-            &near_jsonrpc_client::methods::validators::RpcValidatorRequest {
-                epoch_reference: near_primitives::types::EpochReference::Latest,
-            },
-        )
-        .await?;
+#[derive(Debug, BorshDeserialize, BorshSerialize)]
+struct Item {
+    key: String,
+    value: String,
+}
 
-    Ok(epoch_validator_info
-        .current_validators
-        .into_iter()
-        .map(|validator| validator.account_id)
-        .chain(
-            epoch_validator_info
-                .next_validators
-                .into_iter()
-                .map(|validator| validator.account_id),
-        )
-        .chain(
-            epoch_validator_info.current_fishermen.into_iter().map(
-                near_primitives::views::validator_stake_view::ValidatorStakeView::take_account_id,
-            ),
-        )
-        .chain(
-            epoch_validator_info.next_fishermen.into_iter().map(
-                near_primitives::views::validator_stake_view::ValidatorStakeView::take_account_id,
-            ),
-        )
-        .chain(
-            epoch_validator_info.current_proposals.into_iter().map(
-                near_primitives::views::validator_stake_view::ValidatorStakeView::take_account_id,
-            ),
-        )
-        .chain(
-            epoch_validator_info
-                .prev_epoch_kickout
-                .into_iter()
-                .map(|validator| validator.account_id),
-        )
-        .collect())
+pub async fn get_validators() -> Result<Vec<AccountId>> {
+    let json_rpc_client = JsonRpcClient::connect("https://beta.rpc.mainnet.near.org");
+
+    let query_view_method_response = json_rpc_client
+        .call(near_jsonrpc_client::methods::query::RpcQueryRequest {
+            block_reference: near_primitives::types::Finality::Final.into(),
+            request: near_primitives::views::QueryRequest::ViewState {
+                account_id: "poolv1.near".parse::<AccountId>()?,
+                prefix: near_primitives::types::StoreKey::from(Vec::new()),
+                include_proof: false,
+            },
+        })
+        .await
+        .wrap_err_with(|| {
+            "Failed to fetch query ViewState for <poolv1.near> on network <beta-rpc>".to_string()
+        })?;
+    if let near_jsonrpc_primitives::types::query::QueryResponseKind::ViewState(result) =
+        query_view_method_response.kind
+    {
+        Ok(result
+            .values
+            .iter()
+            .filter_map(|item| String::try_from_slice(&item.value).ok())
+            .filter_map(|item| item.parse::<AccountId>().ok())
+            .collect::<Vec<_>>())
+    } else {
+        Err(color_eyre::Report::msg("Error call result".to_string()))
+    }
 }
 
 async fn get_validator_delegators(
@@ -95,7 +90,7 @@ pub async fn get_all_delegators(
     json_rpc_client: &JsonRpcClient,
 ) -> Result<BTreeMap<String, String>> {
     let mut checked_validators = HashSet::new();
-    let validators = get_validators(&json_rpc_client).await?;
+    let validators = get_validators().await?;
     let delegators = Arc::new(Mutex::new(BTreeMap::<AccountId, Vec<AccountId>>::new()));
 
     let mut handles = Vec::new();
