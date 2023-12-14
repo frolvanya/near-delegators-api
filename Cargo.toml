@@ -27,3 +27,7 @@ auth-git2 = "0.5.3"
 openssl = { version = "0.10.40", features = ["vendored"] }
 
 rocket = { version = "0.5", features = ["json"] }
+
+log = "0.4"
+chrono = "0.4"
+pretty_env_logger = "0.5"

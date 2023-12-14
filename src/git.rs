@@ -10,8 +10,10 @@ fn find_last_commit(repo: &git2::Repository) -> Result<git2::Commit, git2::Error
 }
 
 pub fn push() -> Result<()> {
+    info!("Opening git repo");
     let repo = git2::Repository::open(std::path::Path::new("."))?;
 
+    info!("Adding `{}` file", STAKE_DELEGATORS_FILENAME);
     let mut index = repo.index()?;
 
     index.add_path(std::path::Path::new(STAKE_DELEGATORS_FILENAME))?;
@@ -23,13 +25,14 @@ pub fn push() -> Result<()> {
 
     let signature = Signature::now("Ivan Frolov", "frolvanya@gmail.com")?;
 
+    info!("Committing changes");
     repo.commit(
-        Some("HEAD"),                      // point HEAD to our new commit
-        &signature,                        // author
-        &signature,                        // committer
-        "chore: updated stake delegators", // commit message
-        &tree,                             // tree
-        &[&parent_commit],                 // parent commit
+        Some("HEAD"),
+        &signature,
+        &signature,
+        "chore: updated stake delegators",
+        &tree,
+        &[&parent_commit],
     )?;
 
     let branch_name = "master";
@@ -46,8 +49,9 @@ pub fn push() -> Result<()> {
             None,
         )
     });
-
     options.remote_callbacks(callbacks);
+
+    info!("Pushing to git");
     remote.push(
         &[format!("refs/heads/{branch_name}:refs/heads/{branch_name}")],
         Some(&mut options),

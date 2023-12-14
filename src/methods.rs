@@ -5,7 +5,7 @@ use color_eyre::{eyre::Context, Result};
 use near_jsonrpc_client::JsonRpcClient;
 use near_primitives::types::AccountId;
 
-use borsh::{BorshDeserialize, BorshSerialize};
+use borsh::BorshDeserialize;
 
 use std::{
     collections::{BTreeMap, HashSet},
@@ -13,15 +13,10 @@ use std::{
 };
 use tokio::sync::Mutex;
 
-#[derive(Debug, BorshDeserialize, BorshSerialize)]
-struct Item {
-    key: String,
-    value: String,
-}
-
 pub async fn get_validators() -> Result<Vec<AccountId>> {
     let json_rpc_client = JsonRpcClient::connect("https://beta.rpc.mainnet.near.org");
 
+    info!("Fetching all validators");
     let query_view_method_response = json_rpc_client
         .call(near_jsonrpc_client::methods::query::RpcQueryRequest {
             block_reference: near_primitives::types::Finality::Final.into(),
@@ -38,13 +33,24 @@ pub async fn get_validators() -> Result<Vec<AccountId>> {
     if let near_jsonrpc_primitives::types::query::QueryResponseKind::ViewState(result) =
         query_view_method_response.kind
     {
+        info!("Parsing validators");
+
         Ok(result
             .values
             .iter()
-            .filter_map(|item| String::try_from_slice(&item.value).ok())
-            .filter_map(|item| item.parse::<AccountId>().ok())
-            .collect::<Vec<_>>())
+            .filter_map(|item| {
+                if &item.key[..2] == b"se" {
+                    String::try_from_slice(&item.value)
+                        .ok()
+                        .and_then(|result| result.parse().ok())
+                } else {
+                    None
+                }
+            })
+            .collect())
     } else {
+        error!("Failed to parse validators");
+
         Err(color_eyre::Report::msg("Error call result".to_string()))
     }
 }
@@ -89,8 +95,12 @@ async fn get_validator_delegators(
 pub async fn get_all_delegators(
     json_rpc_client: &JsonRpcClient,
 ) -> Result<BTreeMap<String, String>> {
+    info!("Fetching all delegators");
+
     let mut checked_validators = HashSet::new();
-    let validators = get_validators().await?;
+    let mut validators = get_validators().await?;
+    validators.sort_unstable();
+
     let delegators = Arc::new(Mutex::new(BTreeMap::<AccountId, Vec<AccountId>>::new()));
 
     let mut handles = Vec::new();
@@ -109,9 +119,13 @@ pub async fn get_all_delegators(
             for delegator in validator_delegators {
                 let mut locked_delegators = delegators.lock().await;
                 locked_delegators
-                    .entry(delegator.account_id)
+                    .entry(delegator.account_id.clone())
                     .or_default()
                     .push(validator_account_id.clone());
+                locked_delegators
+                    .entry(delegator.account_id.clone())
+                    .or_default()
+                    .sort_unstable();
             }
             Ok::<_, color_eyre::eyre::Report>(())
         });
@@ -119,6 +133,7 @@ pub async fn get_all_delegators(
         handles.push(handle);
     }
 
+    info!("Waiting for all delegators to be fetched");
     futures::future::try_join_all(handles).await?;
 
     let locked_delegators = delegators.lock().await;
