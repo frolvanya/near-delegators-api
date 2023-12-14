@@ -96,7 +96,6 @@ pub async fn get_all_delegators(
 ) -> Result<BTreeMap<String, String>> {
     let mut checked_validators = HashSet::new();
     let validators = get_validators(&json_rpc_client).await?;
-    println!("{:?}", validators.iter().collect::<HashSet<_>>().len());
     let delegators = Arc::new(Mutex::new(BTreeMap::<AccountId, Vec<AccountId>>::new()));
 
     let mut handles = Vec::new();
