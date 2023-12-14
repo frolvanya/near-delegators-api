@@ -34,6 +34,7 @@ async fn webhook() -> Status {
                     info!("Delegators in file are up-to-date");
                     return Status::Ok;
                 }
+
                 if file.seek(std::io::SeekFrom::Start(0)).is_err() {
                     error!("Failed to seek to the beginning of the file");
                     return Status::NotFound;

@@ -1910,6 +1910,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "near-stake-delegators-scan"
+version = "0.1.0"
+dependencies = [
+ "auth-git2",
+ "base64 0.21.5",
+ "borsh 1.2.1",
+ "chrono",
+ "color-eyre",
+ "easy-ext 1.0.1",
+ "futures",
+ "git2",
+ "log",
+ "near-crypto 0.18.0",
+ "near-jsonrpc-client",
+ "near-jsonrpc-primitives",
+ "near-primitives",
+ "openssl",
+ "pretty_env_logger",
+ "rocket",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "near-stdx"
 version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3659,31 +3684,6 @@ name = "utf8parse"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "711b9620af191e0cdc7468a8d14e709c3dcdb115b36f838e601583af800a370a"
-
-[[package]]
-name = "validators-scan"
-version = "0.1.0"
-dependencies = [
- "auth-git2",
- "base64 0.21.5",
- "borsh 1.2.1",
- "chrono",
- "color-eyre",
- "easy-ext 1.0.1",
- "futures",
- "git2",
- "log",
- "near-crypto 0.18.0",
- "near-jsonrpc-client",
- "near-jsonrpc-primitives",
- "near-primitives",
- "openssl",
- "pretty_env_logger",
- "rocket",
- "serde",
- "serde_json",
- "tokio",
-]
 
 [[package]]
 name = "valuable"
