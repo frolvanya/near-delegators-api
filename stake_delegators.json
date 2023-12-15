@@ -1,6 +1,6 @@
 {
-  "timestamp": 1702683953,
-  "delegators": {
+  "timestamp": 1702684182,
+  "stake_delegators": {
     "00011.near": "audit_one.poolv1.near",
     "000115ab412c2c738606a53a5c2b8d0ba622a4fbdbe53d24bab56f296c248385": "bflame.poolv1.near",
     "0002.near": "accomplice.poolv1.near",
@@ -5690,7 +5690,7 @@
     "ad7a1a3fc711c1f8675d84f1b73fa457742ad5f8729a9a89288acc5530f269c1": "kosmos_and_p2p.poolv1.near,qbit.poolv1.near",
     "ad7ae1a53808ba0424e9bf674ac1f046bfcd21e4c77c527b012b6425d924aa6e": "staking-power.poolv1.near",
     "ad85f39db4092ff3a2a70953b33f80758e9514e477eb7c1f7708b408fc6f6418": "coinpayu.poolv1.near",
-    "ad88d2927c328a92f1ae54db773fda688f049bd6b81c9d590aff54784101385e": "lovali.poolv1.near",
+    "ad88d2927c328a92f1ae54db773fda688f049bd6b81c9d590aff54784101385e": "frensvalidator.poolv1.near,lovali.poolv1.near",
     "ad951021c1b1745008899fd613d4570d92b3d2585af23f191a17ae3c21131071": "jubi.poolv1.near",
     "ad986d5fa5c6371194d2e4da4badf9b618cf6120610e3fda85dd94af6c344ccb": "coinpayu.poolv1.near",
     "ad99f385829b42536edfa7478e08d61c1ac144777529795654675d968a8c3648": "cryptotribe.poolv1.near,stakeflow.poolv1.near",
@@ -9404,6 +9404,7 @@
     "dogaozkasli.near": "zkv_staketosupportprivacy.poolv1.near",
     "dogec.near": "accomplice.poolv1.near",
     "dogeisscam.near": "continue.poolv1.near,foundry.poolv1.near,ideocolabventures.poolv1.near,inotel.poolv1.near,zkv_staketosupportprivacy.poolv1.near",
+    "doggo.near": "doghouse.poolv1.near",
     "dohoa98.near": "08investinwomen_runbybisontrails.poolv1.near",
     "doice.near": "cryptium.poolv1.near",
     "dokia.near": "dokiacapital.poolv1.near",
@@ -10871,7 +10872,7 @@
     "firethumbs.near": "steak.poolv1.near",
     "fireye.near": "lunanova.poolv1.near",
     "firstegg.near": "continue.poolv1.near",
-    "firsthoni.near": "d1.poolv1.near",
+    "firsthoni.near": "d1.poolv1.near,doghouse.poolv1.near",
     "fishermv.near": "jazza.poolv1.near",
     "fishom.near": "tottenham_hotspur.poolv1.near",
     "fiskantes.near": "namdokmai.poolv1.near",
@@ -17652,7 +17653,7 @@
     "vinhnv.near": "cryptium.poolv1.near",
     "vinhquangfb.near": "legends.poolv1.near",
     "vinjya.near": "lunanova.poolv1.near,stardust.poolv1.near",
-    "vinot007.near": "08investinwomen_runbybisontrails.poolv1.near,abl_pool.poolv1.near,accomplice.poolv1.near,agnico-1.poolv1.near,audit_one.poolv1.near,baziliknear.poolv1.near,chorusone.poolv1.near,cryptium.poolv1.near,cryptotribe.poolv1.near,d1.poolv1.near,electric.poolv1.near,erm.poolv1.near,finoa.poolv1.near,foundry.poolv1.near,hb436_pool.poolv1.near,ideocolabventures.poolv1.near,inotel.poolv1.near,jazza.poolv1.near,legends.poolv1.near,lunanova.poolv1.near,lux.poolv1.near,nearcrowd.poolv1.near,nearfans.poolv1.near,northernlights.poolv1.near,sharpdarts.poolv1.near,sparkpool.poolv1.near,stardust.poolv1.near,tottenham_hotspur.poolv1.near,zkv_staketosupportprivacy.poolv1.near",
+    "vinot007.near": "08investinwomen_runbybisontrails.poolv1.near,abl_pool.poolv1.near,accomplice.poolv1.near,agnico-1.poolv1.near,audit_one.poolv1.near,baziliknear.poolv1.near,chorusone.poolv1.near,cryptium.poolv1.near,cryptotribe.poolv1.near,d1.poolv1.near,doghouse.poolv1.near,electric.poolv1.near,erm.poolv1.near,finoa.poolv1.near,foundry.poolv1.near,hb436_pool.poolv1.near,ideocolabventures.poolv1.near,inotel.poolv1.near,jazza.poolv1.near,legends.poolv1.near,lunanova.poolv1.near,lux.poolv1.near,nearcrowd.poolv1.near,nearfans.poolv1.near,northernlights.poolv1.near,sharpdarts.poolv1.near,sparkpool.poolv1.near,stardust.poolv1.near,tottenham_hotspur.poolv1.near,zkv_staketosupportprivacy.poolv1.near",
     "vintes.near": "doubletop.poolv1.near",
     "vinvin520.near": "nearfans.poolv1.near",
     "vip010.near": "erm.poolv1.near",
