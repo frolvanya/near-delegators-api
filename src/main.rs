@@ -11,6 +11,12 @@ use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use color_eyre::eyre::{Context, Result};
 use rocket::http::Status;
 
+#[derive(Debug, serde::Serialize, serde::Deserialize, Default)]
+struct DelegatorsWithTimestamp {
+    timestamp: i64,
+    stake_delegators: std::collections::BTreeMap<String, String>,
+}
+
 async fn update_stake_delegators() -> Result<()> {
     let mut file = tokio::fs::OpenOptions::new()
         .read(true)
@@ -20,16 +26,23 @@ async fn update_stake_delegators() -> Result<()> {
         .await
         .context("Failed to open the file")?;
 
-    let mut existing_delegators = String::new();
-    file.read_to_string(&mut existing_delegators)
+    let mut existing_content = String::new();
+    file.read_to_string(&mut existing_content)
         .await
         .context("Failed to read from file")?;
 
+    let existing_data: DelegatorsWithTimestamp =
+        serde_json::from_str(&existing_content).unwrap_or_default();
+
     let delegators = methods::get_all_delegators().await?;
 
-    let current_json = serde_json::to_string_pretty(&delegators)?;
+    let timestamp = chrono::Utc::now().timestamp();
+    let current_data = serde_json::to_string_pretty(&DelegatorsWithTimestamp {
+        timestamp,
+        stake_delegators: delegators.clone(),
+    })?;
 
-    if current_json == existing_delegators {
+    if timestamp - existing_data.timestamp < 3600 && delegators == existing_data.stake_delegators {
         info!("Delegators in file are up-to-date");
         return Ok(());
     }
@@ -42,7 +55,7 @@ async fn update_stake_delegators() -> Result<()> {
         .await
         .context("Failed to truncate the file")?;
 
-    file.write_all(current_json.as_bytes())
+    file.write_all(current_data.as_bytes())
         .await
         .context("Failed to write to file")?;
 

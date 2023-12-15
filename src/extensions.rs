@@ -25,7 +25,7 @@ pub impl near_primitives::views::CallResult {
     }
 }
 
-#[derive(serde::Deserialize, Debug, Ord, PartialOrd, Eq, PartialEq)]
+#[derive(serde::Deserialize, Ord, PartialOrd, Eq, PartialEq)]
 pub struct Delegator {
     pub account_id: near_primitives::types::AccountId,
 }
