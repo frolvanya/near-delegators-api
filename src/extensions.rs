@@ -21,16 +21,11 @@ pub impl near_primitives::views::CallResult {
     where
         T: for<'de> serde::Deserialize<'de>,
     {
-        serde_json::from_slice(&self.result).wrap_err_with(|| {
-            format!(
-                "Failed to parse view-function call return value: {}",
-                String::from_utf8_lossy(&self.result)
-            )
-        })
+        serde_json::from_slice(&self.result).context("Failed to parse view-function call result")
     }
 }
 
-#[derive(serde::Deserialize, Debug, PartialOrd, Eq, PartialEq)]
+#[derive(serde::Deserialize, Debug, Ord, PartialOrd, Eq, PartialEq)]
 pub struct Delegator {
     pub account_id: near_primitives::types::AccountId,
 }

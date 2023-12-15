@@ -5,68 +5,61 @@ mod methods;
 #[macro_use]
 extern crate rocket;
 
-use std::io::{Read, Seek, Write};
+use std::io::Write;
+use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 
-use near_jsonrpc_client::JsonRpcClient;
+use color_eyre::eyre::{Context, Result};
 use rocket::http::Status;
+
+async fn update_stake_delegators() -> Result<()> {
+    let mut file = tokio::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .open(git::STAKE_DELEGATORS_FILENAME)
+        .await
+        .context("Failed to open the file")?;
+
+    let mut existing_delegators = String::new();
+    file.read_to_string(&mut existing_delegators)
+        .await
+        .context("Failed to read from file")?;
+
+    let delegators = methods::get_all_delegators().await?;
+
+    let current_json = serde_json::to_string_pretty(&delegators)?;
+
+    if current_json == existing_delegators {
+        info!("Delegators in file are up-to-date");
+        return Ok(());
+    }
+
+    file.seek(std::io::SeekFrom::Start(0))
+        .await
+        .context("Failed to seek to the beginning of the file")?;
+
+    file.set_len(0)
+        .await
+        .context("Failed to truncate the file")?;
+
+    file.write_all(current_json.as_bytes())
+        .await
+        .context("Failed to write to file")?;
+
+    info!("Delegators updated in file");
+
+    git::push()?;
+
+    Ok(())
+}
 
 #[post("/")]
 async fn webhook() -> Status {
     info!("Webhook received");
 
-    let json_rpc_client = JsonRpcClient::connect("https://rpc.mainnet.near.org");
-
-    if let Ok(mut file) = std::fs::OpenOptions::new()
-        .read(true)
-        .write(true)
-        .create(true)
-        .open(git::STAKE_DELEGATORS_FILENAME)
-    {
-        let mut existing_delegators = String::new();
-        if file.read_to_string(&mut existing_delegators).is_err() {
-            error!("Failed to read from file");
-            return Status::NotFound;
-        }
-
-        if let Ok(delegators) = methods::get_all_delegators(&json_rpc_client).await {
-            if let Ok(current_json) = serde_json::to_string_pretty(&delegators) {
-                if current_json == existing_delegators {
-                    info!("Delegators in file are up-to-date");
-                    return Status::Ok;
-                }
-
-                if file.seek(std::io::SeekFrom::Start(0)).is_err() {
-                    error!("Failed to seek to the beginning of the file");
-                    return Status::NotFound;
-                }
-
-                if file.set_len(0).is_err() {
-                    error!("Failed to truncate the file");
-                    return Status::NotFound;
-                }
-
-                if file.write_all(current_json.as_bytes()).is_err() {
-                    error!("Failed to write to file");
-                    return Status::NotFound;
-                }
-
-                info!("Delegators updated in file");
-
-                if git::push().is_err() {
-                    error!("Failed to push to Git");
-                    return Status::NotFound;
-                }
-            } else {
-                error!("Failed to serialize current delegators");
-                return Status::NotFound;
-            }
-        } else {
-            error!("Failed to get current delegators from JSON-RPC client");
-            return Status::NotFound;
-        }
-    } else {
-        error!("Failed to open the file");
-        return Status::NotFound;
+    if let Err(e) = update_stake_delegators().await {
+        error!("Error processing webhook: {}", e);
+        return Status::InternalServerError;
     }
 
     Status::Ok

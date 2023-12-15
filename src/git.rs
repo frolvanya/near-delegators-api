@@ -43,9 +43,12 @@ pub fn push() -> Result<()> {
 
     callbacks.credentials(|_url, username_from_url, _allowed_types| {
         Cred::ssh_key(
-            username_from_url.unwrap(),
+            username_from_url.unwrap_or_default(),
             None,
-            std::path::Path::new(&format!("{}/.ssh/id_rsa", std::env::var("HOME").unwrap())),
+            std::path::Path::new(&format!(
+                "{}/.ssh/id_rsa",
+                std::env::var("HOME").unwrap_or_default()
+            )),
             None,
         )
     });
