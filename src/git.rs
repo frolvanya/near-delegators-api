@@ -13,6 +13,27 @@ pub fn push() -> Result<()> {
     info!("Opening git repo");
     let repo = git2::Repository::open(std::path::Path::new("."))?;
 
+    info!("Pulling from origin");
+    let mut remote = repo.find_remote("origin")?;
+    let mut fetch_options = git2::FetchOptions::new();
+
+    let mut callbacks = git2::RemoteCallbacks::new();
+    callbacks.credentials(|_url, username_from_url, _allowed_types| {
+        Cred::ssh_key(
+            username_from_url.unwrap_or_default(),
+            None,
+            std::path::Path::new(&format!(
+                "{}/.ssh/id_rsa",
+                std::env::var("HOME").unwrap_or_default()
+            )),
+            None,
+        )
+    });
+
+    fetch_options.remote_callbacks(callbacks);
+
+    remote.fetch(&["master"], Some(&mut fetch_options), None)?;
+
     info!("Adding `{}` file", STAKE_DELEGATORS_FILENAME);
     let mut index = repo.index()?;
 
@@ -38,9 +59,8 @@ pub fn push() -> Result<()> {
     let branch_name = "master";
     let mut remote = repo.find_remote("origin")?;
 
-    let mut callbacks = git2::RemoteCallbacks::new();
     let mut options = git2::PushOptions::new();
-
+    let mut callbacks = git2::RemoteCallbacks::new();
     callbacks.credentials(|_url, username_from_url, _allowed_types| {
         Cred::ssh_key(
             username_from_url.unwrap_or_default(),
@@ -52,6 +72,7 @@ pub fn push() -> Result<()> {
             None,
         )
     });
+
     options.remote_callbacks(callbacks);
 
     info!("Pushing to git");

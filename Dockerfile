@@ -30,6 +30,7 @@ RUN mkdir -p /root/.ssh && \
     echo "$SSH_PRIVATE_KEY" > /root/.ssh/id_rsa && \
     chmod 600 /root/.ssh/id_rsa && \
     ssh-keyscan github.com >> /root/.ssh/known_hosts
+RUN echo "StrictHostKeyChecking no" > ~/.ssh/config
 
 ARG REPO
 RUN git clone $REPO
