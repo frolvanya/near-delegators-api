@@ -22,9 +22,6 @@ RUN apk add --no-cache libgcc git openssh-client
 
 EXPOSE 8000
 
-RUN adduser -D -u 1000 appuser
-USER appuser
-
 ARG SSH_PRIVATE_KEY
 RUN mkdir -p /root/.ssh && \
     echo "$SSH_PRIVATE_KEY" > /root/.ssh/id_rsa && \
@@ -32,11 +29,7 @@ RUN mkdir -p /root/.ssh && \
     ssh-keyscan github.com >> /root/.ssh/known_hosts
 RUN echo "StrictHostKeyChecking no" > ~/.ssh/config
 
-# ARG REPO
-# RUN git clone $REPO
-# WORKDIR /near-stake-delegators-scan
 COPY . .
-# RUN git pull --rebase origin master
 COPY --from=build /near-stake-delegators-scan/target/release/near-stake-delegators-scan .
 
 ENV RUST_LOG=info
