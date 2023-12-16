@@ -22,8 +22,8 @@ RUN apk add --no-cache libgcc git openssh-client
 
 EXPOSE 8000
 
-# RUN adduser -D -u 1000 appuser
-# USER appuser
+RUN adduser -D -u 1000 appuser
+USER appuser
 
 ARG SSH_PRIVATE_KEY
 RUN mkdir -p /root/.ssh && \
