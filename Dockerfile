@@ -32,9 +32,11 @@ RUN mkdir -p /root/.ssh && \
     ssh-keyscan github.com >> /root/.ssh/known_hosts
 RUN echo "StrictHostKeyChecking no" > ~/.ssh/config
 
-ARG REPO
-RUN git clone $REPO
-WORKDIR /near-stake-delegators-scan
+# ARG REPO
+# RUN git clone $REPO
+# WORKDIR /near-stake-delegators-scan
+COPY . .
+# RUN git pull --rebase origin master
 COPY --from=build /near-stake-delegators-scan/target/release/near-stake-delegators-scan .
 
 ENV RUST_LOG=info

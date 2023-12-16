@@ -3,22 +3,6 @@ use git2::{Cred, Signature};
 
 pub const STAKE_DELEGATORS_FILENAME: &str = "stake_delegators.json";
 
-fn initialize_callbacks() -> git2::RemoteCallbacks<'static> {
-    let mut callbacks = git2::RemoteCallbacks::new();
-    callbacks.credentials(|_url, username_from_url, _allowed_types| {
-        Cred::ssh_key(
-            username_from_url.unwrap_or_default(),
-            None,
-            std::path::Path::new(&format!(
-                "{}/.ssh/id_rsa",
-                std::env::var("HOME").unwrap_or_default()
-            )),
-            None,
-        )
-    });
-    callbacks
-}
-
 fn find_last_commit(repo: &git2::Repository) -> Result<git2::Commit, git2::Error> {
     let obj = repo.head()?.resolve()?.peel(git2::ObjectType::Commit)?;
     obj.into_commit()
@@ -28,13 +12,6 @@ fn find_last_commit(repo: &git2::Repository) -> Result<git2::Commit, git2::Error
 pub fn push() -> Result<()> {
     info!("Opening git repo");
     let repo = git2::Repository::open(std::path::Path::new("."))?;
-
-    info!("Pulling from origin");
-    let mut remote = repo.find_remote("origin")?;
-    let mut fetch_options = git2::FetchOptions::new();
-
-    fetch_options.remote_callbacks(initialize_callbacks());
-    remote.fetch(&["master"], Some(&mut fetch_options), None)?;
 
     info!("Adding `{}` file", STAKE_DELEGATORS_FILENAME);
     let mut index = repo.index()?;
@@ -61,8 +38,21 @@ pub fn push() -> Result<()> {
     let branch_name = "master";
     let mut remote = repo.find_remote("origin")?;
 
+    let mut callbacks = git2::RemoteCallbacks::new();
     let mut options = git2::PushOptions::new();
-    options.remote_callbacks(initialize_callbacks());
+
+    callbacks.credentials(|_url, username_from_url, _allowed_types| {
+        Cred::ssh_key(
+            username_from_url.unwrap_or_default(),
+            None,
+            std::path::Path::new(&format!(
+                "{}/.ssh/id_rsa",
+                std::env::var("HOME").unwrap_or_default()
+            )),
+            None,
+        )
+    });
+    options.remote_callbacks(callbacks);
 
     info!("Pushing to git");
     remote.push(
