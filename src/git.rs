@@ -42,12 +42,14 @@ pub fn push() -> Result<()> {
     let mut options = git2::PushOptions::new();
 
     callbacks.credentials(|_url, username_from_url, _allowed_types| {
+        let Some(username_from_url) = username_from_url else { return Err(git2::Error::from_str("Couldn't find username")) };
+        let Ok(home) = std::env::var("HOME") else { return Err(git2::Error::from_str("Couldn't find home")) };
         Cred::ssh_key(
-            username_from_url.unwrap_or_default(),
+            username_from_url,
             None,
             std::path::Path::new(&format!(
                 "{}/.ssh/id_rsa",
-                std::env::var("HOME").unwrap_or_default()
+                home
             )),
             None,
         )

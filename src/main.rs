@@ -31,8 +31,13 @@ async fn update_stake_delegators() -> Result<()> {
         .await
         .context("Failed to read from file")?;
 
-    let existing_data: DelegatorsWithTimestamp =
-        serde_json::from_str(&existing_content).unwrap_or_default();
+    let existing_data = match serde_json::from_str(&existing_content) {
+        Ok(data) => data,
+        Err(_) => {
+            info!("File is empty");
+            DelegatorsWithTimestamp::default()
+        }
+    };
 
     let delegators = methods::get_all_delegators().await?;
 
