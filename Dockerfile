@@ -22,13 +22,6 @@ RUN apk add --no-cache libgcc git openssh-client
 
 EXPOSE 8000
 
-ARG SSH_PRIVATE_KEY
-RUN mkdir -p /root/.ssh && \
-    echo "$SSH_PRIVATE_KEY" > /root/.ssh/id_rsa && \
-    chmod 600 /root/.ssh/id_rsa && \
-    ssh-keyscan github.com >> /root/.ssh/known_hosts
-RUN echo "StrictHostKeyChecking no" > ~/.ssh/config
-
 COPY . .
 COPY --from=build /near-stake-delegators-scan/target/release/near-stake-delegators-scan .
 
