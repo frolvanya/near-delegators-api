@@ -36,7 +36,18 @@ async fn post_handler() -> Status {
 }
 
 #[launch]
-fn rocket() -> _ {
+async fn rocket() -> _ {
+    let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
+
+    tokio::spawn(async move {
+        loop {
+            interval.tick().await;
+            if let Err(e) = stake_delegators::update().await {
+                error!("Error updating stake delegators: {}", e);
+            }
+        }
+    });
+
     pretty_env_logger::formatted_timed_builder()
         .format(|buf, record| {
             writeln!(
