@@ -1,5 +1,5 @@
 {
-  "timestamp": 1703619822,
+  "timestamp": 1703621114,
   "stake_delegators": {
     "00011.near": "audit_one.poolv1.near",
     "000115ab412c2c738606a53a5c2b8d0ba622a4fbdbe53d24bab56f296c248385": "bflame.poolv1.near",
@@ -11166,7 +11166,6 @@
     "fbscoin.near": "baziliknear.poolv1.near",
     "fc00b172ac134dbded9bf35618d4be90503cccd948af1ade0ddf9bbf02620873": "stakeseeker.poolv1.near",
     "fc0988c9affc9204f10fd65614613141840c3effcd9073e65bdecf60b60fb36a": "centurion.poolv1.near",
-    "fc14ba298813d7347286f33f71c3e041c7f9fc0da5253bf59338904768d32c3b": "hapi.poolv1.near",
     "fc1a595812bc8ee800acc35c717ff5ac3727c759680350fd599a60e3227fd88c": "ruziev.poolv1.near",
     "fc1b6ecda116e96b2b8b08cfe59e1c7321e588bf269816a387350f78ee2253e4": "inc4.poolv1.near",
     "fc1e6c6fe2064ed39df747fc5f8cd3d66fa47780ef9842f92da3beada8034d6a": "lavenderfive.poolv1.near",
