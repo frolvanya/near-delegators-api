@@ -42,8 +42,15 @@ async fn rocket() -> _ {
     tokio::spawn(async move {
         loop {
             interval.tick().await;
-            if let Err(e) = stake_delegators::update().await {
-                error!("Error updating stake delegators: {}", e);
+            match stake_delegators::get().await {
+                Ok(data) => {
+                    if chrono::Utc::now().timestamp() - data.timestamp > 1800 {
+                        if let Err(e) = stake_delegators::update().await {
+                            error!("Error updating stake delegators: {}", e);
+                        }
+                    }
+                }
+                Err(e) => error!("Error updating stake delegators: {}", e),
             }
         }
     });

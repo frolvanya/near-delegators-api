@@ -9,7 +9,7 @@ pub const STAKE_DELEGATORS_FILENAME: &str = "stake_delegators.json";
 #[derive(Debug, serde::Serialize, serde::Deserialize, Default)]
 #[serde(crate = "rocket::serde")]
 pub struct DelegatorsWithTimestamp {
-    timestamp: i64,
+    pub timestamp: i64,
     stake_delegators: std::collections::BTreeMap<String, String>,
 }
 
@@ -63,7 +63,7 @@ pub async fn update() -> Result<()> {
         stake_delegators: delegators.clone(),
     })?;
 
-    if timestamp - existing_data.timestamp < 3600 && delegators == existing_data.stake_delegators {
+    if timestamp - existing_data.timestamp < 1800 && delegators == existing_data.stake_delegators {
         info!("Stake delegators in file are up-to-date");
         return Ok(());
     }
