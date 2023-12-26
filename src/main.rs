@@ -10,7 +10,7 @@ use std::io::Write;
 use rocket::http::Status;
 use rocket::serde::json::Json;
 
-#[get("/")]
+#[get("/get-stake-delegators")]
 async fn get_handler() -> Json<stake_delegators::DelegatorsWithTimestamp> {
     info!("GET request received");
 
@@ -23,7 +23,7 @@ async fn get_handler() -> Json<stake_delegators::DelegatorsWithTimestamp> {
     }
 }
 
-#[post("/")]
+#[post("/update-stake-delegators")]
 async fn post_handler() -> Status {
     info!("POST request received");
 

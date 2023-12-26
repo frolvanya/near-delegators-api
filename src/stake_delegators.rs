@@ -18,7 +18,7 @@ async fn open_file() -> Result<tokio::fs::File> {
         .read(true)
         .write(true)
         .create(true)
-        .open(STAKE_DELEGATORS_FILENAME)
+        .open(format!("/data/{STAKE_DELEGATORS_FILENAME}"))
         .await
         .context("Failed to open the file")
 }

@@ -15,3 +15,7 @@ primary_region = "yyz"
   auto_start_machines = true
   min_machines_running = 0
   processes = ["app"]
+
+[mounts]
+  source="stake_delegators"
+  destination="/data"

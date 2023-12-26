@@ -22,7 +22,6 @@ RUN apk add --no-cache libgcc git openssh-client
 
 EXPOSE 8000
 
-COPY . .
 COPY --from=build /near-stake-delegators-scan/target/release/near-stake-delegators-scan .
 
 ENV RUST_LOG=info
