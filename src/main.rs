@@ -35,8 +35,9 @@ async fn post_handler() -> Status {
     Status::Ok
 }
 
-#[launch]
-async fn rocket() -> _ {
+#[tokio::main]
+#[allow(clippy::no_effect_underscore_binding)]
+async fn main() {
     let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
 
     tokio::spawn(async move {
@@ -68,5 +69,8 @@ async fn rocket() -> _ {
         .filter(None, log::LevelFilter::Info)
         .init();
 
-    rocket::build().mount("/", routes![get_handler, post_handler])
+    let _ = rocket::build()
+        .mount("/", routes![get_handler, post_handler])
+        .launch()
+        .await;
 }
