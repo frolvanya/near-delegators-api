@@ -32,6 +32,20 @@ Then simply run launch command:
 
 ![launch](images/fly-launch.png)
 
+> To ensure high availability, especially for production apps, fly.io strongly recommend running at least 2 machines. You can scale up the number of machines using the fly scale command in the CLI. Check out the [documentation](https://fly.io/docs/apps/scale-count/#scale-the-number-of-machines-in-a-single-region) for more details.
+
+Use show command to view current resources:
+
+```bash
+fly scale show
+```
+
+And count command to scale your app:
+
+```bash
+fly scale count 2
+```
+
 In case you want to redeploy application:
 
 ```bash
