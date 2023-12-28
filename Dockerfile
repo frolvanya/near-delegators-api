@@ -16,7 +16,7 @@ COPY src src
 RUN rm ./target/release/deps/near_stake_delegators_scan*
 RUN cargo build --release
 
-FROM --platform=linux/amd64 alpine:latest 
+FROM alpine:latest 
 
 RUN apk add --no-cache libgcc git openssh-client
 
