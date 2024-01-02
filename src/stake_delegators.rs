@@ -6,32 +6,37 @@ use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 
 pub const STAKE_DELEGATORS_FILENAME: &str = "stake_delegators.json";
 
-#[derive(Debug, serde::Serialize, serde::Deserialize, Default)]
+#[derive(Debug, serde::Serialize, serde::Deserialize, Default, Clone)]
 #[serde(crate = "rocket::serde")]
 pub struct DelegatorsWithTimestamp {
     pub timestamp: i64,
-    stake_delegators: std::collections::BTreeMap<String, String>,
+    pub stake_delegators: std::collections::BTreeMap<String, String>,
 }
 
-async fn open_file() -> Result<tokio::fs::File> {
+async fn with_json_file_cache() -> Result<tokio::fs::File> {
+    let path = format!(
+        "{}/{STAKE_DELEGATORS_FILENAME}",
+        std::env::var("HOME").unwrap_or_default()
+    );
+
     tokio::fs::OpenOptions::new()
         .read(true)
         .write(true)
         .create(true)
-        .open(format!("/data/{STAKE_DELEGATORS_FILENAME}"))
+        .open(path)
         .await
-        .context("Failed to open the file")
+        .context("Failed to open file")
 }
 
-pub async fn read(
+pub async fn read_delegators_from_file(
     file: &mut tokio::fs::File,
 ) -> Result<DelegatorsWithTimestamp, color_eyre::eyre::Error> {
-    let mut existing_content = String::new();
-    file.read_to_string(&mut existing_content)
+    let mut content = String::new();
+    file.read_to_string(&mut content)
         .await
         .context("Failed to read from file")?;
 
-    let existing_data = serde_json::from_str(&existing_content).map_or_else(
+    let data = serde_json::from_str(&content).map_or_else(
         |_| {
             info!("File is empty");
             DelegatorsWithTimestamp::default()
@@ -39,33 +44,34 @@ pub async fn read(
         |data| data,
     );
 
-    Ok(existing_data)
+    Ok(data)
 }
 
-pub async fn get() -> Result<DelegatorsWithTimestamp> {
-    let mut file = open_file().await?;
+pub async fn get_delegators_from_cache() -> Result<DelegatorsWithTimestamp> {
+    let mut file = with_json_file_cache().await?;
 
-    let existing_data = read(&mut file).await?;
-
-    Ok(existing_data)
+    read_delegators_from_file(&mut file).await
 }
 
-pub async fn update() -> Result<()> {
-    let mut file = open_file().await?;
+pub async fn update_stake_delegators_cache() -> Result<DelegatorsWithTimestamp> {
+    let mut file = with_json_file_cache().await?;
 
-    let existing_data = read(&mut file).await?;
+    let existing_delegators = read_delegators_from_file(&mut file).await?;
 
-    let delegators = methods::get_all_delegators().await?;
+    let new_delegators = methods::get_all_delegators().await?;
 
     let timestamp = chrono::Utc::now().timestamp();
-    let current_data = serde_json::to_string_pretty(&DelegatorsWithTimestamp {
+    let updated_data = DelegatorsWithTimestamp {
         timestamp,
-        stake_delegators: delegators.clone(),
-    })?;
+        stake_delegators: new_delegators.clone(),
+    };
+    let updated_data_json = serde_json::to_string_pretty(&updated_data)?;
 
-    if timestamp - existing_data.timestamp < 1800 && delegators == existing_data.stake_delegators {
+    if timestamp - existing_delegators.timestamp < 1800
+        && new_delegators == existing_delegators.stake_delegators
+    {
         info!("Stake delegators in file are up-to-date");
-        return Ok(());
+        return Ok(existing_delegators);
     }
 
     file.seek(std::io::SeekFrom::Start(0))
@@ -76,11 +82,11 @@ pub async fn update() -> Result<()> {
         .await
         .context("Failed to truncate the file")?;
 
-    file.write_all(current_data.as_bytes())
+    file.write_all(updated_data_json.as_bytes())
         .await
         .context("Failed to write to file")?;
 
     info!("Updated stake delegators file");
 
-    Ok(())
+    Ok(updated_data)
 }

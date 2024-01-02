@@ -7,14 +7,13 @@ use near_primitives::types::AccountId;
 
 use borsh::BorshDeserialize;
 
-// use futures::{StreamExt, TryStreamExt};
 use std::{
     collections::{BTreeMap, BTreeSet},
     sync::Arc,
 };
 use tokio::sync::Mutex;
 
-pub async fn get_validators() -> Result<BTreeSet<AccountId>> {
+pub async fn get_all_validators() -> Result<BTreeSet<AccountId>> {
     let json_rpc_client = JsonRpcClient::connect("https://beta.rpc.mainnet.near.org");
 
     info!("Fetching all validators");
@@ -54,7 +53,7 @@ pub async fn get_validators() -> Result<BTreeSet<AccountId>> {
     }
 }
 
-async fn get_validator_delegators(
+async fn get_delegators_by_validator_account_id(
     json_rpc_client: &JsonRpcClient,
     validator_account_id: &AccountId,
 ) -> Result<BTreeSet<extensions::Delegator>> {
@@ -96,7 +95,7 @@ pub async fn get_all_delegators() -> Result<BTreeMap<String, String>> {
 
     let json_rpc_client = JsonRpcClient::connect("https://archival-rpc.mainnet.near.org");
 
-    let validators = get_validators().await?;
+    let validators = get_all_validators().await?;
     let delegators = Arc::new(Mutex::new(BTreeMap::<AccountId, BTreeSet<AccountId>>::new()));
 
     info!("Fetching delegators for {} validators", validators.len());
@@ -108,7 +107,8 @@ pub async fn get_all_delegators() -> Result<BTreeMap<String, String>> {
 
         let handle = tokio::spawn(async move {
             let validator_delegators =
-                get_validator_delegators(&json_rpc_client, &validator_account_id).await?;
+                get_delegators_by_validator_account_id(&json_rpc_client, &validator_account_id)
+                    .await?;
             for delegator in validator_delegators {
                 let mut locked_delegators = delegators.lock().await;
                 locked_delegators
