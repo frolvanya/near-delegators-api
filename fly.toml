@@ -10,7 +10,7 @@ primary_region = "yyz"
 
 [mounts]
   source = "stake_delegators"
-  destination = "/data"
+  destination = "/"
 
 [http_service]
   internal_port = 8000
