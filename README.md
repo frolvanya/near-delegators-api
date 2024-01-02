@@ -7,6 +7,9 @@ This Rust application provides a simple API for managing stake delegators.
 - **GET Endpoint**: The `/get-stake-delegators` endpoint returns information about stake delegators in a JSON format.
 
 Example:
+```bash
+curl https://near-stake-delegators-scan.fly.dev/get-stake-delegators
+```
 ```json
 {
     "timestamp": 1703627160,
@@ -17,6 +20,22 @@ Example:
     }
 }
 ```
+
+- **GET Endpoint**: The `/get-stake-delegators/<account-id>` endpoint returns information about all validators for specified delegator.
+
+Example:
+```bash
+curl https://near-stake-delegators-scan.fly.dev/get-stake-delegators/frol.near
+```
+```json
+{
+    "timestamp": 1703627160,
+    "stake_delegators": {
+        "frol.near": "qbit.poolv1.near",
+    }
+}
+```
+
 
 - **POST Endpoint**: The `/update-stake-delegators` endpoint allows for the update of stake delegator information.
 
