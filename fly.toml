@@ -1,15 +1,15 @@
-# fly.toml app configuration file generated for near-stake-delegators-scan on 2024-01-01T23:01:43-05:00
+# fly.toml app configuration file generated for near-delegators-scan on 2024-01-01T23:01:43-05:00
 #
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
 
-app = "near-stake-delegators-scan"
+app = "near-delegators-scan"
 primary_region = "yyz"
 
 [build]
 
 [[mounts]]
-  source = "stake_delegators"
+  source = "delegators"
   destination = "/"
 
 [http_service]

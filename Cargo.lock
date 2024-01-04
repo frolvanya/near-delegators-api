@@ -1707,6 +1707,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "near-delegators-api"
+version = "0.1.0"
+dependencies = [
+ "base64 0.21.5",
+ "borsh 1.3.0",
+ "chrono",
+ "color-eyre",
+ "easy-ext 1.0.1",
+ "futures",
+ "log",
+ "near-crypto 0.19.0",
+ "near-jsonrpc-client",
+ "near-jsonrpc-primitives",
+ "near-primitives",
+ "openssl",
+ "pretty_env_logger",
+ "rocket",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "near-fmt"
 version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1856,29 +1879,6 @@ dependencies = [
  "near-rpc-error-core",
  "serde",
  "syn 2.0.39",
-]
-
-[[package]]
-name = "near-stake-delegators-scan"
-version = "0.1.0"
-dependencies = [
- "base64 0.21.5",
- "borsh 1.3.0",
- "chrono",
- "color-eyre",
- "easy-ext 1.0.1",
- "futures",
- "log",
- "near-crypto 0.19.0",
- "near-jsonrpc-client",
- "near-jsonrpc-primitives",
- "near-primitives",
- "openssl",
- "pretty_env_logger",
- "rocket",
- "serde",
- "serde_json",
- "tokio",
 ]
 
 [[package]]

@@ -1,70 +1,102 @@
+mod delegators;
 mod extensions;
 mod methods;
-mod stake_delegators;
 
 #[macro_use]
 extern crate rocket;
 
 use std::io::Write;
+use tokio::io::AsyncSeekExt;
 
 use rocket::http::Status;
 use rocket::serde::json::Json;
 use rocket::State;
+
+use color_eyre::{eyre::Context, Result};
+use serde_json::Value;
+use std::collections::{BTreeMap, BTreeSet};
 
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
 #[derive(Clone)]
 struct AppState {
-    delegators_state: Arc<Mutex<stake_delegators::DelegatorsWithTimestamp>>,
+    validators_state: Arc<Mutex<delegators::ValidatorsWithTimestamp>>,
+    delegators_state: Arc<Mutex<delegators::DelegatorsWithTimestamp>>,
 }
 
-#[get("/get-stake-delegators")]
-async fn get_all(state: &State<AppState>) -> Json<stake_delegators::DelegatorsWithTimestamp> {
+#[get("/get-delegators")]
+async fn get_all(state: &State<AppState>) -> Json<delegators::DelegatorsWithTimestamp> {
     info!("GET request received");
 
     Json(state.delegators_state.lock().await.clone())
 }
 
-#[get("/get-stake-delegators/<account_id>")]
+#[get("/get-delegators/<account_id>")]
 async fn get_by_account_id(
     account_id: &str,
     state: &State<AppState>,
-) -> Json<stake_delegators::DelegatorsWithTimestamp> {
+) -> (Status, Json<delegators::DelegatorsWithTimestamp>) {
     info!("GET by account id request received");
 
-    let locked_state = state.delegators_state.lock().await;
-    Json(stake_delegators::DelegatorsWithTimestamp {
-        timestamp: locked_state.timestamp,
-        stake_delegators: locked_state
-            .stake_delegators
-            .iter()
-            .filter(|(k, _)| **k == account_id)
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect::<std::collections::BTreeMap<String, String>>(),
-    })
+    let locked_delegators_state = state.delegators_state.lock().await;
+
+    locked_delegators_state
+        .delegators
+        .get(account_id)
+        .map_or_else(
+            || {
+                (
+                    Status::InternalServerError,
+                    Json(delegators::DelegatorsWithTimestamp::default()),
+                )
+            },
+            |delegators| {
+                let mut delegators_map = BTreeMap::<String, BTreeSet<String>>::new();
+                delegators_map.insert(account_id.to_string(), delegators.clone());
+                (
+                    Status::Ok,
+                    Json(delegators::DelegatorsWithTimestamp {
+                        timestamp: locked_delegators_state.timestamp,
+                        delegators: delegators_map,
+                    }),
+                )
+            },
+        )
 }
 
-#[post("/update-stake-delegators")]
-async fn update(state: &State<AppState>) -> Status {
+#[post("/update-delegators", data = "<data>")]
+async fn update(data: Json<Value>, state: &State<AppState>) -> Status {
     info!("POST request received");
 
-    match stake_delegators::update_stake_delegators_cache().await {
-        Ok(updated_state) => {
-            let mut locked_state = state.delegators_state.lock().await;
-            *locked_state = updated_state;
+    let receipt_id = data["payload"]["Actions"]["receipt_id"].as_str();
+
+    let mut locked_delegators_state = state.delegators_state.lock().await;
+    let mut locked_validators_state = state.validators_state.lock().await;
+
+    match delegators::update_delegators_cache(
+        locked_delegators_state.clone(),
+        locked_validators_state.clone(),
+        receipt_id,
+    )
+    .await
+    {
+        Ok((updated_delegators, updated_validators)) => {
+            *locked_delegators_state = updated_delegators;
+            *locked_validators_state = updated_validators;
+
+            Status::Ok
         }
         Err(e) => {
             error!("Error processing POST request: {}", e);
+            Status::InternalServerError
         }
     }
-
-    Status::Ok
 }
 
 #[tokio::main]
 #[allow(clippy::no_effect_underscore_binding)]
-async fn main() {
+async fn main() -> Result<()> {
     pretty_env_logger::formatted_timed_builder()
         .format(|buf, record| {
             writeln!(
@@ -78,11 +110,24 @@ async fn main() {
         .filter(None, log::LevelFilter::Info)
         .init();
 
-    let initial_delegators_state = stake_delegators::get_delegators_from_cache()
+    let mut file = delegators::with_json_file_cache().await?;
+
+    file.seek(std::io::SeekFrom::Start(0))
+        .await
+        .context("Failed to seek to the beginning of the file")?;
+
+    file.set_len(0)
+        .await
+        .context("Failed to truncate the file")?;
+
+    let initial_delegators_state = delegators::get_delegators_from_cache()
         .await
         .unwrap_or_default();
+    let initial_validators_state =
+        delegators::ValidatorsWithTimestamp::from(&initial_delegators_state);
     let app_state = AppState {
         delegators_state: Arc::new(Mutex::new(initial_delegators_state)),
+        validators_state: Arc::new(Mutex::new(initial_validators_state)),
     };
     let app_state_clone = app_state.clone();
 
@@ -91,22 +136,33 @@ async fn main() {
     tokio::spawn(async move {
         loop {
             interval.tick().await;
-            match stake_delegators::get_delegators_from_cache().await {
+
+            match delegators::get_delegators_from_cache().await {
                 Ok(data) => {
                     if chrono::Utc::now().timestamp() - data.timestamp > 1800 {
-                        match stake_delegators::update_stake_delegators_cache().await {
-                            Ok(updated_state) => {
-                                let mut locked_state =
-                                    app_state_clone.delegators_state.lock().await;
-                                *locked_state = updated_state;
+                        let mut locked_delegators_state =
+                            app_state_clone.delegators_state.lock().await;
+                        let mut locked_validators_state =
+                            app_state_clone.validators_state.lock().await;
+
+                        match delegators::update_delegators_cache(
+                            locked_delegators_state.clone(),
+                            locked_validators_state.clone(),
+                            None,
+                        )
+                        .await
+                        {
+                            Ok((updated_delegators, updated_validators)) => {
+                                *locked_delegators_state = updated_delegators;
+                                *locked_validators_state = updated_validators;
                             }
                             Err(e) => {
-                                error!("Error updating stake delegators: {}", e);
+                                error!("Error updating delegators: {}", e);
                             }
                         }
                     }
                 }
-                Err(e) => error!("Error updating stake delegators: {}", e),
+                Err(e) => error!("Error updating delegators: {}", e),
             }
         }
     });
@@ -116,4 +172,6 @@ async fn main() {
         .manage(app_state)
         .launch()
         .await;
+
+    Ok(())
 }

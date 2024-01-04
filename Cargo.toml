@@ -1,5 +1,5 @@
 [package]
-name = "near-stake-delegators-scan"
+name = "near-delegators-api"
 version = "0.1.0"
 edition = "2021"
 

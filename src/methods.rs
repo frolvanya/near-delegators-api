@@ -3,7 +3,6 @@ use crate::extensions::{self, CallResultExt, RpcQueryResponseExt};
 use color_eyre::{eyre::Context, Result};
 
 use near_jsonrpc_client::JsonRpcClient;
-use near_primitives::types::AccountId;
 
 use borsh::BorshDeserialize;
 
@@ -13,7 +12,27 @@ use std::{
 };
 use tokio::sync::Mutex;
 
-pub async fn get_all_validators() -> Result<BTreeSet<AccountId>> {
+pub async fn get_receiver_id(
+    receipt_id: &str,
+) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    let json_rpc_client = JsonRpcClient::connect("https://rpc.mainnet.near.org");
+
+    info!("Fetching receipt");
+    let receipt_response = json_rpc_client
+        .call(
+            near_jsonrpc_client::methods::EXPERIMENTAL_receipt::RpcReceiptRequest {
+                receipt_reference: near_jsonrpc_primitives::types::receipts::ReceiptReference {
+                    receipt_id: receipt_id.parse()?,
+                },
+            },
+        )
+        .await
+        .context("Failed to fetch receipt")?;
+
+    Ok(receipt_response.receiver_id.to_string())
+}
+
+pub async fn get_all_validators() -> Result<BTreeSet<String>> {
     let json_rpc_client = JsonRpcClient::connect("https://beta.rpc.mainnet.near.org");
 
     info!("Fetching all validators");
@@ -21,7 +40,7 @@ pub async fn get_all_validators() -> Result<BTreeSet<AccountId>> {
         .call(near_jsonrpc_client::methods::query::RpcQueryRequest {
             block_reference: near_primitives::types::Finality::Final.into(),
             request: near_primitives::views::QueryRequest::ViewState {
-                account_id: "poolv1.near".parse::<AccountId>()?,
+                account_id: "poolv1.near".parse()?,
                 prefix: near_primitives::types::StoreKey::from(Vec::new()),
                 include_proof: false,
             },
@@ -53,15 +72,16 @@ pub async fn get_all_validators() -> Result<BTreeSet<AccountId>> {
     }
 }
 
-async fn get_delegators_by_validator_account_id(
-    json_rpc_client: &JsonRpcClient,
-    validator_account_id: &AccountId,
-) -> Result<BTreeSet<extensions::Delegator>> {
+pub async fn get_delegators_by_validator_account_id(
+    validator_account_id: String,
+) -> Result<BTreeSet<String>> {
+    let json_rpc_client = JsonRpcClient::connect("https://archival-rpc.mainnet.near.org");
+
     let delegators_response = json_rpc_client
         .call(near_jsonrpc_client::methods::query::RpcQueryRequest {
             block_reference: near_primitives::types::BlockReference::latest(),
             request: near_primitives::views::QueryRequest::CallFunction {
-                account_id: validator_account_id.clone(),
+                account_id: validator_account_id.parse()?,
                 method_name: "get_accounts".to_string(),
                 args: near_primitives::types::FunctionArgs::from(serde_json::to_vec(
                     &serde_json::json!({
@@ -76,7 +96,13 @@ async fn get_delegators_by_validator_account_id(
     match delegators_response {
         Ok(response) => Ok(response
             .call_result()?
-            .parse_result_from_json()
+            .parse_result_from_json::<BTreeSet<extensions::Delegator>>()
+            .map(|delegators| {
+                delegators
+                    .into_iter()
+                    .map(|delegator| delegator.account_id.to_string())
+                    .collect()
+            })
             .context("Failed to parse delegators")?),
         Err(near_jsonrpc_client::errors::JsonRpcError::ServerError(
             near_jsonrpc_client::errors::JsonRpcServerError::HandlerError(
@@ -90,29 +116,25 @@ async fn get_delegators_by_validator_account_id(
     }
 }
 
-pub async fn get_all_delegators() -> Result<BTreeMap<String, String>> {
+pub async fn get_all_delegators() -> Result<BTreeMap<String, BTreeSet<String>>> {
     info!("Fetching all delegators");
 
-    let json_rpc_client = JsonRpcClient::connect("https://archival-rpc.mainnet.near.org");
-
     let validators = get_all_validators().await?;
-    let delegators = Arc::new(Mutex::new(BTreeMap::<AccountId, BTreeSet<AccountId>>::new()));
+    let delegators = Arc::new(Mutex::new(BTreeMap::<String, BTreeSet<String>>::new()));
 
     info!("Fetching delegators for {} validators", validators.len());
 
     let mut handles = Vec::new();
     for validator_account_id in validators {
-        let json_rpc_client = json_rpc_client.clone();
         let delegators = delegators.clone();
 
         let handle = tokio::spawn(async move {
             let validator_delegators =
-                get_delegators_by_validator_account_id(&json_rpc_client, &validator_account_id)
-                    .await?;
+                get_delegators_by_validator_account_id(validator_account_id.clone()).await?;
             for delegator in validator_delegators {
                 let mut locked_delegators = delegators.lock().await;
                 locked_delegators
-                    .entry(delegator.account_id.clone())
+                    .entry(delegator.to_string())
                     .or_default()
                     .insert(validator_account_id.clone());
             }
@@ -126,17 +148,5 @@ pub async fn get_all_delegators() -> Result<BTreeMap<String, String>> {
     futures::future::try_join_all(handles).await?;
 
     let locked_delegators = delegators.lock().await;
-
-    Ok(locked_delegators
-        .iter()
-        .map(|(k, v)| {
-            (
-                k.to_string(),
-                v.iter()
-                    .map(std::string::ToString::to_string)
-                    .collect::<Vec<String>>()
-                    .join(","),
-            )
-        })
-        .collect::<BTreeMap<String, String>>())
+    Ok(locked_delegators.clone())
 }

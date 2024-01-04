@@ -1,19 +1,19 @@
-# Stake Delegators API
+# NEAR Delegators API
 
-This Rust application provides a simple API for managing stake delegators. 
+This Rust application provides a simple API for managing stake delegators in NEAR protocol. 
 
 ## Endpoints
 
-- **GET Endpoint**: The `/get-stake-delegators` endpoint returns information about stake delegators in a JSON format.
+- **GET Endpoint**: The `/get-delegators` endpoint returns information about delegators in a JSON format.
 
 Example:
 ```bash
-curl https://near-stake-delegators-scan.fly.dev/get-stake-delegators
+curl https://near-delegators-scan.fly.dev/get-delegators
 ```
 ```json
 {
     "timestamp": 1703627160,
-    "stake_delegators": {
+    "delegators": {
         "frol.near": "qbit.poolv1.near",
         "frolik.near": "qbit.poolv1.near,staked.poolv1.near",
         ...
@@ -21,23 +21,23 @@ curl https://near-stake-delegators-scan.fly.dev/get-stake-delegators
 }
 ```
 
-- **GET Endpoint**: The `/get-stake-delegators/<account-id>` endpoint returns information about all validators for specified delegator.
+- **GET Endpoint**: The `/get-delegators/<account-id>` endpoint returns information about all validators for specified delegator.
 
 Example:
 ```bash
-curl https://near-stake-delegators-scan.fly.dev/get-stake-delegators/frol.near
+curl https://near-delegators-scan.fly.dev/get-delegators/frol.near
 ```
 ```json
 {
     "timestamp": 1703627160,
-    "stake_delegators": {
+    "delegators": {
         "frol.near": "qbit.poolv1.near",
     }
 }
 ```
 
 
-- **POST Endpoint**: The `/update-stake-delegators` endpoint allows for the update of stake delegator information.
+- **POST Endpoint**: The `/update-delegators` endpoint allows for the update of delegator information.
 
 ## Deployment on fly.io
 
@@ -74,7 +74,7 @@ fly deploy
 You also can view logs via cli or fly.io dashboard:
 
 ```bash
-fly logs -a near-stake-delegators-scan
+fly logs -a near-delegators-scan
 ```
 The application logs requests and errors using the `pretty_env_logger` crate and provides timestamped logs in a readable format.
 
