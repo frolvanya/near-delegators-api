@@ -98,7 +98,7 @@ async fn main() -> Result<()> {
             writeln!(
                 buf,
                 "{} [{}] - {}",
-                chrono::Local::now().format("%H:%M:%S"),
+                chrono::Local::now().format("%d-%b-%Y %H:%M:%S"),
                 record.level(),
                 record.args()
             )
