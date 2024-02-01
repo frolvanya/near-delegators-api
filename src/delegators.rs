@@ -1,13 +1,17 @@
 use crate::methods;
 
 use color_eyre::{eyre::Context, Result};
+use near_jsonrpc_client::JsonRpcClient;
 use std::collections::{BTreeMap, BTreeSet};
+
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 
 pub const DELEGATORS_FILENAME: &str = "delegators.json";
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ValidatorsWithTimestamp {
     pub timestamp: i64,
     pub validators: BTreeMap<String, BTreeSet<String>>,
@@ -75,78 +79,117 @@ pub async fn with_json_file_cache() -> Result<tokio::fs::File> {
         .context("Failed to open file")
 }
 
-pub async fn read_delegators_from_file(
-    file: &mut tokio::fs::File,
-) -> Result<DelegatorsWithTimestamp> {
+pub async fn get_delegators_from_cache() -> Result<DelegatorsWithTimestamp> {
     let mut content = String::new();
+
+    let mut file = with_json_file_cache().await?;
     file.read_to_string(&mut content)
         .await
         .context("Failed to read from file")?;
 
-    let data = serde_json::from_str(&content).map_or_else(
+    Ok(serde_json::from_str(&content).map_or_else(
         |_| {
             info!("File is empty");
             DelegatorsWithTimestamp::default()
         },
         |data| data,
-    );
-
-    Ok(data)
-}
-
-pub async fn get_delegators_from_cache() -> Result<DelegatorsWithTimestamp> {
-    let mut file = with_json_file_cache().await?;
-
-    read_delegators_from_file(&mut file).await
+    ))
 }
 
 pub async fn update_delegators_cache(
-    mut delegators_with_timestamp: DelegatorsWithTimestamp,
-    mut validators_with_timestamp: ValidatorsWithTimestamp,
+    delegators_with_timestamp: &Arc<Mutex<DelegatorsWithTimestamp>>,
+    validators_with_timestamp: &Arc<Mutex<ValidatorsWithTimestamp>>,
     receipt_id: Option<&str>,
 ) -> Result<(DelegatorsWithTimestamp, ValidatorsWithTimestamp)> {
+    let beta_json_rpc_client = JsonRpcClient::connect("https://beta.rpc.mainnet.near.org");
+
     let timestamp = chrono::Utc::now().timestamp();
-    let (updated_delegators_with_timestamp, updated_validators_with_timestamp) =
-        if let Some(receipt_id) = receipt_id {
-            info!("Updating delegators for validator: {}", receipt_id);
 
-            let Ok(receiver_id) = methods::get_receiver_id(receipt_id).await else {
-                color_eyre::eyre::bail!("Failed to get receiver_id for receipt_id: {receipt_id}");
-            };
+    let (mut updated_delegators_with_timestamp, mut updated_validators_with_timestamp) =
+        (None, None);
 
-            validators_with_timestamp.timestamp = timestamp;
-            validators_with_timestamp.validators.insert(
-                receiver_id.clone(),
-                methods::get_delegators_by_validator_account_id(receiver_id).await?,
-            );
-
-            (
-                DelegatorsWithTimestamp::from(&validators_with_timestamp),
-                validators_with_timestamp,
-            )
-        } else {
-            info!("Updating all delegators");
-
-            let updated_delegators = methods::get_all_delegators().await?;
-            if timestamp - delegators_with_timestamp.timestamp < 1800
-                && delegators_with_timestamp.delegators == updated_delegators
+    if let Some(receipt_id) = receipt_id {
+        for _ in 0..20 {
+            if let Ok(receiver_id) =
+                methods::get_receiver_id(&beta_json_rpc_client, receipt_id).await
             {
-                info!("Delegators in file are up-to-date");
-                return Ok((delegators_with_timestamp, validators_with_timestamp));
+                info!("Updating delegators for validator: {}", receiver_id);
+
+                let validator_delegators = methods::get_delegators_by_validator_account_id(
+                    &beta_json_rpc_client,
+                    receiver_id.clone(),
+                )
+                .await?;
+
+                info!("Updated delegators for validator: {}", receiver_id);
+
+                let mut validators_with_timestamp = validators_with_timestamp.lock().await;
+                validators_with_timestamp.timestamp = timestamp;
+                validators_with_timestamp
+                    .validators
+                    .insert(receiver_id.clone(), validator_delegators);
+
+                (
+                    updated_delegators_with_timestamp,
+                    updated_validators_with_timestamp,
+                ) = (
+                    Some(DelegatorsWithTimestamp::from(
+                        &validators_with_timestamp.clone(),
+                    )),
+                    Some(validators_with_timestamp.clone()),
+                );
+
+                break;
             }
 
-            delegators_with_timestamp.timestamp = timestamp;
-            delegators_with_timestamp.delegators = updated_delegators;
+            warn!("Failed to get receiver_id for receipt_id: {receipt_id}. Retrying...");
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        }
+    }
 
-            (
+    if updated_delegators_with_timestamp.is_none() && updated_validators_with_timestamp.is_none() {
+        info!("Updating all delegators");
+
+        let mut delegators_with_timestamp = delegators_with_timestamp.lock().await;
+        let updated_delegators = methods::get_all_delegators(&beta_json_rpc_client)
+            .await
+            .context("Failed to get all delegators")?;
+
+        if timestamp - delegators_with_timestamp.timestamp < 1800
+            && delegators_with_timestamp.delegators == updated_delegators
+        {
+            info!("Delegators in file are up-to-date");
+            return Ok((
                 delegators_with_timestamp.clone(),
-                ValidatorsWithTimestamp::from(&delegators_with_timestamp),
-            )
-        };
+                validators_with_timestamp.lock().await.clone(),
+            ));
+        }
+
+        delegators_with_timestamp.timestamp = timestamp;
+        delegators_with_timestamp.delegators = updated_delegators;
+
+        (
+            updated_delegators_with_timestamp,
+            updated_validators_with_timestamp,
+        ) = (
+            Some(delegators_with_timestamp.clone()),
+            Some(ValidatorsWithTimestamp::from(
+                &delegators_with_timestamp.clone(),
+            )),
+        );
+    }
+
+    let Some(updated_delegators_with_timestamp) = updated_delegators_with_timestamp else {
+        color_eyre::eyre::bail!("Failed to update delegators");
+    };
+    let Some(updated_validators_with_timestamp) = updated_validators_with_timestamp else {
+        color_eyre::eyre::bail!("Failed to update validators");
+    };
 
     let updated_delegators_json = serde_json::to_string_pretty(&updated_delegators_with_timestamp)?;
 
     let mut file = with_json_file_cache().await?;
+
     file.seek(std::io::SeekFrom::Start(0))
         .await
         .context("Failed to seek to the beginning of the file")?;

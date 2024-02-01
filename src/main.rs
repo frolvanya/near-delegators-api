@@ -6,13 +6,12 @@ mod methods;
 extern crate rocket;
 
 use std::io::Write;
-use tokio::io::AsyncSeekExt;
 
 use rocket::http::Status;
 use rocket::serde::json::Json;
 use rocket::State;
 
-use color_eyre::{eyre::Context, Result};
+use color_eyre::Result;
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -71,19 +70,16 @@ async fn update(data: Json<Value>, state: &State<AppState>) -> Status {
 
     let receipt_id = data["payload"]["Actions"]["receipt_id"].as_str();
 
-    let mut locked_delegators_state = state.delegators_state.lock().await;
-    let mut locked_validators_state = state.validators_state.lock().await;
-
     match delegators::update_delegators_cache(
-        locked_delegators_state.clone(),
-        locked_validators_state.clone(),
+        &state.delegators_state,
+        &state.validators_state,
         receipt_id,
     )
     .await
     {
         Ok((updated_delegators, updated_validators)) => {
-            *locked_delegators_state = updated_delegators;
-            *locked_validators_state = updated_validators;
+            *state.delegators_state.lock().await = updated_delegators;
+            *state.validators_state.lock().await = updated_validators;
 
             Status::Ok
         }
@@ -110,21 +106,12 @@ async fn main() -> Result<()> {
         .filter(None, log::LevelFilter::Info)
         .init();
 
-    let mut file = delegators::with_json_file_cache().await?;
-
-    file.seek(std::io::SeekFrom::Start(0))
-        .await
-        .context("Failed to seek to the beginning of the file")?;
-
-    file.set_len(0)
-        .await
-        .context("Failed to truncate the file")?;
-
     let initial_delegators_state = delegators::get_delegators_from_cache()
         .await
         .unwrap_or_default();
     let initial_validators_state =
         delegators::ValidatorsWithTimestamp::from(&initial_delegators_state);
+
     let app_state = AppState {
         delegators_state: Arc::new(Mutex::new(initial_delegators_state)),
         validators_state: Arc::new(Mutex::new(initial_validators_state)),
@@ -140,21 +127,16 @@ async fn main() -> Result<()> {
             match delegators::get_delegators_from_cache().await {
                 Ok(data) => {
                     if chrono::Utc::now().timestamp() - data.timestamp > 1800 {
-                        let mut locked_delegators_state =
-                            app_state_clone.delegators_state.lock().await;
-                        let mut locked_validators_state =
-                            app_state_clone.validators_state.lock().await;
-
                         match delegators::update_delegators_cache(
-                            locked_delegators_state.clone(),
-                            locked_validators_state.clone(),
+                            &app_state_clone.delegators_state,
+                            &app_state_clone.validators_state,
                             None,
                         )
                         .await
                         {
                             Ok((updated_delegators, updated_validators)) => {
-                                *locked_delegators_state = updated_delegators;
-                                *locked_validators_state = updated_validators;
+                                *app_state_clone.delegators_state.lock().await = updated_delegators;
+                                *app_state_clone.validators_state.lock().await = updated_validators;
                             }
                             Err(e) => {
                                 error!("Error updating delegators: {}", e);

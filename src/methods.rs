@@ -6,19 +6,22 @@ use near_jsonrpc_client::JsonRpcClient;
 
 use borsh::BorshDeserialize;
 
+use futures::{stream::StreamExt, TryStreamExt};
 use std::{
     collections::{BTreeMap, BTreeSet},
     sync::Arc,
 };
 use tokio::sync::Mutex;
 
+pub const LIMIT: usize = 500;
+
 pub async fn get_receiver_id(
+    beta_json_rpc_client: &JsonRpcClient,
     receipt_id: &str,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-    let json_rpc_client = JsonRpcClient::connect("https://rpc.mainnet.near.org");
-
     info!("Fetching receipt");
-    let receipt_response = json_rpc_client
+
+    let receipt_response = beta_json_rpc_client
         .call(
             near_jsonrpc_client::methods::EXPERIMENTAL_receipt::RpcReceiptRequest {
                 receipt_reference: near_jsonrpc_primitives::types::receipts::ReceiptReference {
@@ -32,11 +35,10 @@ pub async fn get_receiver_id(
     Ok(receipt_response.receiver_id.to_string())
 }
 
-pub async fn get_all_validators() -> Result<BTreeSet<String>> {
-    let json_rpc_client = JsonRpcClient::connect("https://beta.rpc.mainnet.near.org");
-
+pub async fn get_all_validators(beta_json_rpc_client: &JsonRpcClient) -> Result<BTreeSet<String>> {
     info!("Fetching all validators");
-    let query_view_method_response = json_rpc_client
+
+    let query_view_method_response = beta_json_rpc_client
         .call(near_jsonrpc_client::methods::query::RpcQueryRequest {
             block_reference: near_primitives::types::Finality::Final.into(),
             request: near_primitives::views::QueryRequest::ViewState {
@@ -72,38 +74,29 @@ pub async fn get_all_validators() -> Result<BTreeSet<String>> {
     }
 }
 
-pub async fn get_delegators_by_validator_account_id(
+async fn get_number_of_delegators(
+    beta_json_rpc_client: &JsonRpcClient,
+    block_reference: near_primitives::types::BlockReference,
     validator_account_id: String,
-) -> Result<BTreeSet<String>> {
-    let json_rpc_client = JsonRpcClient::connect("https://archival-rpc.mainnet.near.org");
-
-    let delegators_response = json_rpc_client
+) -> Result<usize> {
+    let delegators_response = beta_json_rpc_client
         .call(near_jsonrpc_client::methods::query::RpcQueryRequest {
-            block_reference: near_primitives::types::BlockReference::latest(),
+            block_reference,
             request: near_primitives::views::QueryRequest::CallFunction {
                 account_id: validator_account_id.parse()?,
-                method_name: "get_accounts".to_string(),
+                method_name: "get_number_of_accounts".to_string(),
                 args: near_primitives::types::FunctionArgs::from(serde_json::to_vec(
-                    &serde_json::json!({
-                        "from_index": 0,
-                        "limit": std::u64::MAX,
-                    }),
+                    &serde_json::json!(null),
                 )?),
             },
         })
         .await;
 
     match delegators_response {
-        Ok(response) => Ok(response
+        Ok(response) => response
             .call_result()?
-            .parse_result_from_json::<BTreeSet<extensions::Delegator>>()
-            .map(|delegators| {
-                delegators
-                    .into_iter()
-                    .map(|delegator| delegator.account_id.to_string())
-                    .collect()
-            })
-            .context("Failed to parse delegators")?),
+            .parse_result_from_json::<usize>()
+            .context("Failed to parse delegators"),
         Err(near_jsonrpc_client::errors::JsonRpcError::ServerError(
             near_jsonrpc_client::errors::JsonRpcServerError::HandlerError(
                 near_jsonrpc_client::methods::query::RpcQueryError::NoContractCode { .. }
@@ -111,32 +104,101 @@ pub async fn get_delegators_by_validator_account_id(
                     ..
                 },
             ),
-        )) => Ok(BTreeSet::new()),
+        )) => Ok(0),
         Err(err) => Err(err.into()),
     }
 }
 
-pub async fn get_all_delegators() -> Result<BTreeMap<String, BTreeSet<String>>> {
+pub async fn get_delegators_by_validator_account_id(
+    beta_json_rpc_client: &JsonRpcClient,
+    validator_account_id: String,
+) -> Result<BTreeSet<String>> {
+    let block_reference = near_primitives::types::BlockReference::latest();
+
+    let number_of_delegators = get_number_of_delegators(
+        beta_json_rpc_client,
+        block_reference.clone(),
+        validator_account_id.clone(),
+    )
+    .await?;
+
+    let delegators = futures::stream::iter((0..number_of_delegators).step_by(LIMIT)).map(|from| {
+        let block_reference = block_reference.clone();
+        let validator_account_id = validator_account_id.clone();
+
+        async move {
+            let delegators_response = beta_json_rpc_client
+                .call(near_jsonrpc_client::methods::query::RpcQueryRequest {
+                    block_reference: block_reference.clone(),
+                    request: near_primitives::views::QueryRequest::CallFunction {
+                        account_id: validator_account_id.parse()?,
+                        method_name: "get_accounts".to_string(),
+                        args: near_primitives::types::FunctionArgs::from(serde_json::to_vec(
+                            &serde_json::json!({
+                                "from_index": from,
+                                "limit": LIMIT,
+                            }),
+                        )?),
+                    },
+                })
+                .await;
+
+            match delegators_response {
+                Ok(response) => response
+                    .call_result()?
+                    .parse_result_from_json::<BTreeSet<extensions::Delegator>>()
+                    .map(|delegators| {
+                        delegators
+                            .into_iter()
+                            .map(|delegator| delegator.account_id.to_string())
+                            .collect::<BTreeSet<_>>()
+                    })
+                    .context("Failed to parse delegators"),
+                Err(near_jsonrpc_client::errors::JsonRpcError::ServerError(
+                    near_jsonrpc_client::errors::JsonRpcServerError::HandlerError(
+                        near_jsonrpc_client::methods::query::RpcQueryError::NoContractCode { .. }
+                        | near_jsonrpc_client::methods::query::RpcQueryError::ContractExecutionError {
+                            ..
+                        },
+                    ),
+                )) => Ok(BTreeSet::new()),
+                Err(err) => Err(err.into()),
+            }
+        }
+    })
+        .buffer_unordered(50)
+        .try_collect::<BTreeSet<_>>()
+        .await?;
+
+    Ok(delegators.into_iter().flatten().collect())
+}
+
+pub async fn get_all_delegators(
+    beta_json_rpc_client: &JsonRpcClient,
+) -> Result<BTreeMap<String, BTreeSet<String>>> {
     info!("Fetching all delegators");
 
-    let validators = get_all_validators().await?;
+    let validators = get_all_validators(beta_json_rpc_client).await?;
     let delegators = Arc::new(Mutex::new(BTreeMap::<String, BTreeSet<String>>::new()));
 
     info!("Fetching delegators for {} validators", validators.len());
 
     let mut handles = Vec::new();
-    for validator_account_id in validators {
+    for validator in validators {
         let delegators = delegators.clone();
+        let beta_json_rpc_client = beta_json_rpc_client.clone();
 
         let handle = tokio::spawn(async move {
             let validator_delegators =
-                get_delegators_by_validator_account_id(validator_account_id.clone()).await?;
+                get_delegators_by_validator_account_id(&beta_json_rpc_client, validator.clone())
+                    .await?;
+
             for delegator in validator_delegators {
                 let mut locked_delegators = delegators.lock().await;
                 locked_delegators
                     .entry(delegator.to_string())
                     .or_default()
-                    .insert(validator_account_id.clone());
+                    .insert(validator.clone());
             }
             Ok::<_, color_eyre::eyre::Report>(())
         });
