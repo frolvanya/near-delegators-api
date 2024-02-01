@@ -138,6 +138,7 @@ pub async fn update_delegators_cache(
                     )),
                     Some(validators_with_timestamp.clone()),
                 );
+                drop(validators_with_timestamp);
 
                 break;
             }
@@ -177,6 +178,7 @@ pub async fn update_delegators_cache(
                 &delegators_with_timestamp.clone(),
             )),
         );
+        drop(delegators_with_timestamp);
     }
 
     let Some(updated_delegators_with_timestamp) = updated_delegators_with_timestamp else {
