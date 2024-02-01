@@ -8,8 +8,9 @@ This Rust application provides a simple API for managing stake delegators in NEA
 
 Example:
 ```bash
-curl https://near-delegators-scan.fly.dev/get-delegators
+curl https://near-delegators-api.fly.dev/get-delegators
 ```
+
 ```json
 {
     "timestamp": 1703627160,
@@ -25,8 +26,9 @@ curl https://near-delegators-scan.fly.dev/get-delegators
 
 Example:
 ```bash
-curl https://near-delegators-scan.fly.dev/get-delegators/frol.near
+curl https://near-delegators-api.fly.dev/get-delegators/frol.near
 ```
+
 ```json
 {
     "timestamp": 1703627160,
@@ -74,7 +76,7 @@ fly deploy
 You also can view logs via cli or fly.io dashboard:
 
 ```bash
-fly logs -a near-delegators-scan
+fly logs -a near-delegators-api
 ```
 The application logs requests and errors using the `pretty_env_logger` crate and provides timestamped logs in a readable format.
 
