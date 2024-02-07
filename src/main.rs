@@ -7,6 +7,7 @@ extern crate rocket;
 
 use std::io::Write;
 
+use near_jsonrpc_client::JsonRpcClient;
 use rocket::http::Status;
 use rocket::serde::json::Json;
 use rocket::State;
@@ -16,19 +17,20 @@ use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 
 use std::sync::Arc;
-use tokio::sync::Mutex;
+use tokio::sync::RwLock;
 
 #[derive(Clone)]
 struct AppState {
-    validators_state: Arc<Mutex<delegators::ValidatorsWithTimestamp>>,
-    delegators_state: Arc<Mutex<delegators::DelegatorsWithTimestamp>>,
+    accounts_to_process: Arc<RwLock<BTreeSet<String>>>,
+    validators_state: Arc<RwLock<delegators::ValidatorsWithTimestamp>>,
+    delegators_state: Arc<RwLock<delegators::DelegatorsWithTimestamp>>,
 }
 
 #[get("/get-delegators")]
 async fn get_all(state: &State<AppState>) -> Json<delegators::DelegatorsWithTimestamp> {
     info!("GET request received");
 
-    Json(state.delegators_state.lock().await.clone())
+    Json(state.delegators_state.read().await.clone())
 }
 
 #[get("/get-delegators/<account_id>")]
@@ -38,7 +40,7 @@ async fn get_by_account_id(
 ) -> (Status, Json<delegators::DelegatorsWithTimestamp>) {
     info!("GET by account id request received");
 
-    let locked_delegators_state = state.delegators_state.lock().await;
+    let locked_delegators_state = state.delegators_state.read().await;
 
     locked_delegators_state
         .delegators
@@ -70,23 +72,25 @@ async fn update(data: Json<Value>, state: &State<AppState>) -> Status {
 
     let receipt_id = data["payload"]["Actions"]["receipt_id"].as_str();
 
-    match delegators::update_delegators_cache(
-        &state.delegators_state,
-        &state.validators_state,
-        receipt_id,
-    )
-    .await
-    {
-        Ok((updated_delegators, updated_validators)) => {
-            *state.delegators_state.lock().await = updated_delegators;
-            *state.validators_state.lock().await = updated_validators;
+    if let Some(receipt_id) = receipt_id {
+        let beta_json_rpc_client = JsonRpcClient::connect("https://beta.rpc.mainnet.near.org");
 
-            Status::Ok
+        for _ in 0..20 {
+            if let Ok(receiver_id) =
+                methods::get_receiver_id(&beta_json_rpc_client, receipt_id).await
+            {
+                state.accounts_to_process.write().await.insert(receiver_id);
+
+                break;
+            }
+
+            warn!("Failed to get receiver_id for receipt_id: {receipt_id}. Retrying...");
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
         }
-        Err(e) => {
-            error!("Error processing POST request: {}", e);
-            Status::InternalServerError
-        }
+
+        Status::Ok
+    } else {
+        Status::InternalServerError
     }
 }
 
@@ -113,8 +117,9 @@ async fn main() -> Result<()> {
         delegators::ValidatorsWithTimestamp::from(&initial_delegators_state);
 
     let app_state = AppState {
-        delegators_state: Arc::new(Mutex::new(initial_delegators_state)),
-        validators_state: Arc::new(Mutex::new(initial_validators_state)),
+        accounts_to_process: Arc::new(RwLock::new(BTreeSet::new())),
+        delegators_state: Arc::new(RwLock::new(initial_delegators_state)),
+        validators_state: Arc::new(RwLock::new(initial_validators_state)),
     };
     let app_state_clone = app_state.clone();
 
@@ -127,24 +132,62 @@ async fn main() -> Result<()> {
             match delegators::get_delegators_from_cache().await {
                 Ok(data) => {
                     if chrono::Utc::now().timestamp() - data.timestamp > 1800 {
-                        match delegators::update_delegators_cache(
+                        info!(
+                            "Before: {:?}",
+                            app_state_clone
+                                .delegators_state
+                                .read()
+                                .await
+                                .clone()
+                                .timestamp
+                        );
+
+                        if let Err(e) = delegators::update_all_delegators(
                             &app_state_clone.delegators_state,
                             &app_state_clone.validators_state,
-                            None,
                         )
                         .await
                         {
-                            Ok((updated_delegators, updated_validators)) => {
-                                *app_state_clone.delegators_state.lock().await = updated_delegators;
-                                *app_state_clone.validators_state.lock().await = updated_validators;
-                            }
-                            Err(e) => {
-                                error!("Error updating delegators: {}", e);
-                            }
+                            error!("Error updating delegators: {}", e);
                         }
+
+                        info!(
+                            "After: {:?}",
+                            app_state_clone
+                                .delegators_state
+                                .read()
+                                .await
+                                .clone()
+                                .timestamp
+                        );
                     }
                 }
                 Err(e) => error!("Error updating delegators: {}", e),
+            }
+        }
+    });
+
+    let app_state_clone = app_state.clone();
+    interval = tokio::time::interval(std::time::Duration::from_millis(500));
+    tokio::spawn(async move {
+        loop {
+            interval.tick().await;
+
+            if let Some(account_id) = app_state_clone
+                .accounts_to_process
+                .write()
+                .await
+                .pop_first()
+            {
+                if let Err(e) = delegators::update_delegators_by_validator_account_id(
+                    &app_state_clone.delegators_state,
+                    &app_state_clone.validators_state,
+                    account_id,
+                )
+                .await
+                {
+                    error!("Error updating delegators: {}", e);
+                }
             }
         }
     });

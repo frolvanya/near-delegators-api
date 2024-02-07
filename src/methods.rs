@@ -11,7 +11,7 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     sync::Arc,
 };
-use tokio::sync::Mutex;
+use tokio::sync::RwLock;
 
 pub const LIMIT: usize = 500;
 
@@ -179,7 +179,7 @@ pub async fn get_all_delegators(
     info!("Fetching all delegators");
 
     let validators = get_all_validators(beta_json_rpc_client).await?;
-    let delegators = Arc::new(Mutex::new(BTreeMap::<String, BTreeSet<String>>::new()));
+    let delegators = Arc::new(RwLock::new(BTreeMap::<String, BTreeSet<String>>::new()));
 
     info!("Fetching delegators for {} validators", validators.len());
 
@@ -194,7 +194,7 @@ pub async fn get_all_delegators(
                     .await?;
 
             for delegator in validator_delegators {
-                let mut locked_delegators = delegators.lock().await;
+                let mut locked_delegators = delegators.write().await;
                 locked_delegators
                     .entry(delegator.to_string())
                     .or_default()
@@ -209,6 +209,6 @@ pub async fn get_all_delegators(
     info!("Waiting for all delegators to be fetched");
     futures::future::try_join_all(handles).await?;
 
-    let locked_delegators = delegators.lock().await;
+    let locked_delegators = delegators.read().await;
     Ok(locked_delegators.clone())
 }
