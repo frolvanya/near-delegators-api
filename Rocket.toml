@@ -2,7 +2,7 @@
 keep_alive = 60
 
 [default.limits]
-json = "10 MiB"
+json = "50 MiB"
 
 [global.diagnostics]
 timeout = 60
