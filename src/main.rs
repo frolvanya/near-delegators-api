@@ -17,10 +17,7 @@ use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 
 use std::sync::Arc;
-use tokio::sync::{
-    mpsc::{Receiver, Sender},
-    RwLock,
-};
+use tokio::sync::{mpsc::Sender, RwLock};
 
 #[derive(Clone)]
 struct AppState {
@@ -121,7 +118,7 @@ async fn main() -> Result<()> {
         .filter(None, log::LevelFilter::Info)
         .init();
 
-    let (tx, mut rx): (Sender<()>, Receiver<()>) = tokio::sync::mpsc::channel(100);
+    let (tx, mut rx) = tokio::sync::mpsc::channel(100);
 
     let initial_delegators_state = delegators::get_delegators_from_cache()
         .await
