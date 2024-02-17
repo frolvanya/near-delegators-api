@@ -65,10 +65,6 @@ impl From<&ValidatorsWithTimestamp> for DelegatorsWithTimestamp {
 }
 
 pub async fn with_json_file_cache() -> Result<tokio::fs::File> {
-    // let path = format!(
-    //     "{}/{DELEGATORS_FILENAME}",
-    //     std::env::var("HOME").unwrap_or_default()
-    // );
     let path = format!("/mnt/{DELEGATORS_FILENAME}");
 
     tokio::fs::OpenOptions::new()
@@ -100,10 +96,8 @@ pub async fn get_delegators_from_cache() -> Result<DelegatorsWithTimestamp> {
 pub async fn update_delegators_cache(
     delegators_with_timestamp: &Arc<RwLock<DelegatorsWithTimestamp>>,
 ) -> Result<()> {
-    info!("Updating delegators file");
     let updated_delegators_json =
         serde_json::to_string_pretty(&delegators_with_timestamp.read().await.clone())?;
-    info!("Updated delegators JSON");
 
     let mut file = with_json_file_cache().await?;
 
@@ -140,7 +134,6 @@ pub async fn update_all_delegators(
     let timestamp = chrono::Utc::now().timestamp();
     let mut updated_delegators_with_timestamp = delegators_with_timestamp.write().await;
 
-    info!("Checking if delegators in file are up-to-date");
     if timestamp - updated_delegators_with_timestamp.timestamp < 1800
         && updated_delegators_with_timestamp.delegators == updated_delegators
     {
@@ -148,7 +141,6 @@ pub async fn update_all_delegators(
         return Ok(());
     }
 
-    info!("Delegators in file are not up-to-date");
     updated_delegators_with_timestamp.timestamp = timestamp;
     updated_delegators_with_timestamp.delegators = updated_delegators;
 
@@ -180,9 +172,9 @@ pub async fn update_delegators_by_validator_account_id(
     .await
     .context("Failed to get delegators by validator account id")?;
 
+    let timestamp = chrono::Utc::now().timestamp();
     let mut validators_with_timestamp = validators_with_timestamp.write().await;
 
-    let timestamp = chrono::Utc::now().timestamp();
     validators_with_timestamp.timestamp = timestamp;
     validators_with_timestamp
         .validators

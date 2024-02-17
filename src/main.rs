@@ -17,13 +17,17 @@ use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 
 use std::sync::Arc;
-use tokio::sync::RwLock;
+use tokio::sync::{
+    mpsc::{Receiver, Sender},
+    RwLock,
+};
 
 #[derive(Clone)]
 struct AppState {
     accounts_to_process: Arc<RwLock<BTreeSet<String>>>,
     validators_state: Arc<RwLock<delegators::ValidatorsWithTimestamp>>,
     delegators_state: Arc<RwLock<delegators::DelegatorsWithTimestamp>>,
+    tx: Sender<()>,
 }
 
 #[get("/get-delegators")]
@@ -55,6 +59,7 @@ async fn get_by_account_id(
             |delegators| {
                 let mut delegators_map = BTreeMap::<String, BTreeSet<String>>::new();
                 delegators_map.insert(account_id.to_string(), delegators.clone());
+
                 (
                     Status::Ok,
                     Json(delegators::DelegatorsWithTimestamp {
@@ -80,6 +85,12 @@ async fn update(data: Json<Value>, state: &State<AppState>) -> Status {
                 methods::get_receiver_id(&beta_json_rpc_client, receipt_id).await
             {
                 state.accounts_to_process.write().await.insert(receiver_id);
+
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+
+                if state.tx.send(()).await.is_err() {
+                    error!("Failed to send message to the worker");
+                }
 
                 break;
             }
@@ -110,6 +121,8 @@ async fn main() -> Result<()> {
         .filter(None, log::LevelFilter::Info)
         .init();
 
+    let (tx, mut rx): (Sender<()>, Receiver<()>) = tokio::sync::mpsc::channel(100);
+
     let initial_delegators_state = delegators::get_delegators_from_cache()
         .await
         .unwrap_or_default();
@@ -120,6 +133,7 @@ async fn main() -> Result<()> {
         accounts_to_process: Arc::new(RwLock::new(BTreeSet::new())),
         delegators_state: Arc::new(RwLock::new(initial_delegators_state)),
         validators_state: Arc::new(RwLock::new(initial_validators_state)),
+        tx,
     };
     let app_state_clone = app_state.clone();
 
@@ -168,17 +182,20 @@ async fn main() -> Result<()> {
     });
 
     let app_state_clone = app_state.clone();
-    interval = tokio::time::interval(std::time::Duration::from_millis(500));
     tokio::spawn(async move {
-        loop {
-            interval.tick().await;
+        while rx.recv().await.is_some() {
+            let mut accounts_to_process = app_state_clone.accounts_to_process.write().await;
 
-            if let Some(account_id) = app_state_clone
-                .accounts_to_process
-                .write()
-                .await
-                .pop_first()
-            {
+            let mut account_ids = Vec::new();
+            for _ in 0..5 {
+                if let Some(account_id) = accounts_to_process.pop_first() {
+                    account_ids.push(account_id);
+                } else {
+                    break;
+                }
+            }
+
+            for account_id in account_ids {
                 if let Err(e) = delegators::update_delegators_by_validator_account_id(
                     &app_state_clone.delegators_state,
                     &app_state_clone.validators_state,

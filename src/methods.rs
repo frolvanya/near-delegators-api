@@ -193,13 +193,15 @@ pub async fn get_all_delegators(
                 get_delegators_by_validator_account_id(&beta_json_rpc_client, validator.clone())
                     .await?;
 
+            let mut locked_delegators = delegators.write().await;
             for delegator in validator_delegators {
-                let mut locked_delegators = delegators.write().await;
                 locked_delegators
                     .entry(delegator.to_string())
                     .or_default()
                     .insert(validator.clone());
             }
+            drop(locked_delegators);
+
             Ok::<_, color_eyre::eyre::Report>(())
         });
 
@@ -207,6 +209,7 @@ pub async fn get_all_delegators(
     }
 
     info!("Waiting for all delegators to be fetched");
+
     futures::future::try_join_all(handles).await?;
 
     let locked_delegators = delegators.read().await;
