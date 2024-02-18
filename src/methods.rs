@@ -112,9 +112,8 @@ async fn get_number_of_delegators(
 pub async fn get_delegators_by_validator_account_id(
     beta_json_rpc_client: &JsonRpcClient,
     validator_account_id: String,
+    block_reference: near_primitives::types::BlockReference,
 ) -> Result<BTreeSet<String>> {
-    let block_reference = near_primitives::types::BlockReference::latest();
-
     let number_of_delegators = get_number_of_delegators(
         beta_json_rpc_client,
         block_reference.clone(),
@@ -184,14 +183,20 @@ pub async fn get_all_delegators(
     info!("Fetching delegators for {} validators", validators.len());
 
     let mut handles = Vec::new();
+    let block_reference = near_primitives::types::BlockReference::latest();
+
     for validator in validators {
         let delegators = delegators.clone();
         let beta_json_rpc_client = beta_json_rpc_client.clone();
+        let block_reference = block_reference.clone();
 
         let handle = tokio::spawn(async move {
-            let validator_delegators =
-                get_delegators_by_validator_account_id(&beta_json_rpc_client, validator.clone())
-                    .await?;
+            let validator_delegators = get_delegators_by_validator_account_id(
+                &beta_json_rpc_client,
+                validator.clone(),
+                block_reference,
+            )
+            .await?;
 
             let mut locked_delegators = delegators.write().await;
             for delegator in validator_delegators {

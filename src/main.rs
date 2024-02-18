@@ -21,7 +21,7 @@ use tokio::sync::{mpsc::Sender, RwLock};
 
 #[derive(Clone)]
 struct AppState {
-    accounts_to_process: Arc<RwLock<BTreeSet<String>>>,
+    accounts_to_process: Arc<RwLock<BTreeMap<String, String>>>,
     validators_state: Arc<RwLock<delegators::ValidatorsWithTimestamp>>,
     delegators_state: Arc<RwLock<delegators::DelegatorsWithTimestamp>>,
     tx: Sender<()>,
@@ -38,7 +38,7 @@ async fn get_all(state: &State<AppState>) -> Json<delegators::DelegatorsWithTime
 async fn get_by_account_id(
     account_id: &str,
     state: &State<AppState>,
-) -> (Status, Json<delegators::DelegatorsWithTimestamp>) {
+) -> Result<(Status, Json<delegators::DelegatorsWithTimestamp>), Status> {
     info!("GET by account id request received");
 
     let locked_delegators_state = state.delegators_state.read().await;
@@ -47,23 +47,18 @@ async fn get_by_account_id(
         .delegators
         .get(account_id)
         .map_or_else(
-            || {
-                (
-                    Status::InternalServerError,
-                    Json(delegators::DelegatorsWithTimestamp::default()),
-                )
-            },
+            || Err(Status::new(503)),
             |delegators| {
                 let mut delegators_map = BTreeMap::<String, BTreeSet<String>>::new();
                 delegators_map.insert(account_id.to_string(), delegators.clone());
 
-                (
+                Ok((
                     Status::Ok,
                     Json(delegators::DelegatorsWithTimestamp {
                         timestamp: locked_delegators_state.timestamp,
                         delegators: delegators_map,
                     }),
-                )
+                ))
             },
         )
 }
@@ -72,34 +67,37 @@ async fn get_by_account_id(
 async fn update(data: Json<Value>, state: &State<AppState>) -> Status {
     info!("POST request received");
 
-    let receipt_id = data["payload"]["Actions"]["receipt_id"].as_str();
+    let Some(receipt_id) = data["payload"]["Actions"]["receipt_id"].as_str() else {
+        return Status::InternalServerError;
+    };
+    let Some(block_hash) = data["payload"]["Actions"]["block_hash"].as_str() else {
+        return Status::InternalServerError;
+    };
 
-    if let Some(receipt_id) = receipt_id {
-        let beta_json_rpc_client = JsonRpcClient::connect("https://beta.rpc.mainnet.near.org");
+    let beta_json_rpc_client = JsonRpcClient::connect("https://beta.rpc.mainnet.near.org");
 
-        for _ in 0..20 {
-            if let Ok(receiver_id) =
-                methods::get_receiver_id(&beta_json_rpc_client, receipt_id).await
-            {
-                state.accounts_to_process.write().await.insert(receiver_id);
+    for _ in 0..20 {
+        if let Ok(receiver_id) = methods::get_receiver_id(&beta_json_rpc_client, receipt_id).await {
+            state
+                .accounts_to_process
+                .write()
+                .await
+                .insert(receiver_id, block_hash.to_string());
 
-                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
 
-                if state.tx.send(()).await.is_err() {
-                    error!("Failed to send message to the worker");
-                }
-
-                break;
+            if state.tx.send(()).await.is_err() {
+                error!("Failed to send message to the worker");
             }
 
-            warn!("Failed to get receiver_id for receipt_id: {receipt_id}. Retrying...");
-            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            break;
         }
 
-        Status::Ok
-    } else {
-        Status::InternalServerError
+        warn!("Failed to get receiver_id for receipt_id: {receipt_id}. Retrying...");
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
     }
+
+    Status::Ok
 }
 
 #[tokio::main]
@@ -127,7 +125,7 @@ async fn main() -> Result<()> {
         delegators::ValidatorsWithTimestamp::from(&initial_delegators_state);
 
     let app_state = AppState {
-        accounts_to_process: Arc::new(RwLock::new(BTreeSet::new())),
+        accounts_to_process: Arc::new(RwLock::new(BTreeMap::new())),
         delegators_state: Arc::new(RwLock::new(initial_delegators_state)),
         validators_state: Arc::new(RwLock::new(initial_validators_state)),
         tx,
@@ -143,16 +141,6 @@ async fn main() -> Result<()> {
             match delegators::get_delegators_from_cache().await {
                 Ok(data) => {
                     if chrono::Utc::now().timestamp() - data.timestamp > 1800 {
-                        info!(
-                            "Before: {:?}",
-                            app_state_clone
-                                .delegators_state
-                                .read()
-                                .await
-                                .clone()
-                                .timestamp
-                        );
-
                         if let Err(e) = delegators::update_all_delegators(
                             &app_state_clone.delegators_state,
                             &app_state_clone.validators_state,
@@ -161,16 +149,6 @@ async fn main() -> Result<()> {
                         {
                             error!("Error updating delegators: {}", e);
                         }
-
-                        info!(
-                            "After: {:?}",
-                            app_state_clone
-                                .delegators_state
-                                .read()
-                                .await
-                                .clone()
-                                .timestamp
-                        );
                     }
                 }
                 Err(e) => error!("Error updating delegators: {}", e),
@@ -182,8 +160,8 @@ async fn main() -> Result<()> {
     tokio::spawn(async move {
         while rx.recv().await.is_some() {
             let mut accounts_to_process = app_state_clone.accounts_to_process.write().await;
-
             let mut account_ids = Vec::new();
+
             for _ in 0..5 {
                 if let Some(account_id) = accounts_to_process.pop_first() {
                     account_ids.push(account_id);
@@ -192,11 +170,14 @@ async fn main() -> Result<()> {
                 }
             }
 
-            for account_id in account_ids {
+            drop(accounts_to_process);
+
+            for (account_id, block_hash) in account_ids {
                 if let Err(e) = delegators::update_delegators_by_validator_account_id(
                     &app_state_clone.delegators_state,
                     &app_state_clone.validators_state,
                     account_id,
+                    block_hash,
                 )
                 .await
                 {

@@ -159,15 +159,26 @@ pub async fn update_delegators_by_validator_account_id(
     delegators_with_timestamp: &Arc<RwLock<DelegatorsWithTimestamp>>,
     validators_with_timestamp: &Arc<RwLock<ValidatorsWithTimestamp>>,
     validator_account_id: String,
+    block_hash: String,
 ) -> Result<()> {
     info!(
         "Updating delegators for validator: {}",
         validator_account_id
     );
 
+    let block_reference = block_hash
+        .parse::<near_primitives::hash::CryptoHash>()
+        .map(|block_hash| {
+            near_primitives::types::BlockReference::BlockId(near_primitives::types::BlockId::Hash(
+                block_hash,
+            ))
+        })
+        .unwrap_or_else(|_| near_primitives::types::BlockReference::latest());
+
     let validator_delegators = methods::get_delegators_by_validator_account_id(
         &JsonRpcClient::connect("https://beta.rpc.mainnet.near.org"),
         validator_account_id.clone(),
+        block_reference,
     )
     .await
     .context("Failed to get delegators by validator account id")?;
