@@ -13,28 +13,45 @@ use rocket::serde::json::Json;
 use rocket::State;
 
 use color_eyre::Result;
-use serde_json::Value;
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
 use std::sync::Arc;
 use tokio::sync::{mpsc::Sender, RwLock};
 
+#[derive(Debug, Deserialize, Serialize)]
+struct WebhookData {
+    payload: Payload,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct Payload {
+    #[serde(rename = "Actions")]
+    actions: Actions,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct Actions {
+    receipt_id: Option<String>,
+    block_hash: Option<String>,
+}
+
 #[derive(Clone)]
 struct AppState {
-    accounts_to_process: Arc<RwLock<BTreeMap<String, String>>>,
+    validators_to_process: Arc<RwLock<BTreeMap<String, u64>>>,
     validators_state: Arc<RwLock<delegators::ValidatorsWithTimestamp>>,
     delegators_state: Arc<RwLock<delegators::DelegatorsWithTimestamp>>,
     tx: Sender<()>,
 }
 
-#[get("/get-delegators")]
+#[get("/get-staking-pools")]
 async fn get_all(state: &State<AppState>) -> Json<delegators::DelegatorsWithTimestamp> {
     info!("GET request received");
 
     Json(state.delegators_state.read().await.clone())
 }
 
-#[get("/get-delegators/<account_id>")]
+#[get("/get-staking-pools/<account_id>")]
 async fn get_by_account_id(
     account_id: &str,
     state: &State<AppState>,
@@ -63,38 +80,47 @@ async fn get_by_account_id(
         )
 }
 
-#[post("/update-delegators", data = "<data>")]
-async fn update(data: Json<Value>, state: &State<AppState>) -> Status {
+#[post("/update-staking-pools", data = "<data>")]
+async fn update(data: Json<WebhookData>, state: &State<AppState>) -> Status {
     info!("POST request received");
 
-    let Some(receipt_id) = data["payload"]["Actions"]["receipt_id"].as_str() else {
+    let Some(receipt_id) = data.payload.actions.receipt_id.clone() else {
         return Status::InternalServerError;
     };
-    let Some(block_hash) = data["payload"]["Actions"]["block_hash"].as_str() else {
+    let Some(block_hash) = data.payload.actions.block_hash.clone() else {
+        return Status::InternalServerError;
+    };
+    let Ok(block_hash) = block_hash.parse::<near_primitives::hash::CryptoHash>() else {
         return Status::InternalServerError;
     };
 
     let beta_json_rpc_client = JsonRpcClient::connect("https://beta.rpc.mainnet.near.org");
 
-    for _ in 0..20 {
-        if let Ok(receiver_id) = methods::get_receiver_id(&beta_json_rpc_client, receipt_id).await {
-            state
-                .accounts_to_process
-                .write()
-                .await
-                .insert(receiver_id, block_hash.to_string());
+    let block_reference = near_primitives::types::BlockReference::BlockId(
+        near_primitives::types::BlockId::Hash(block_hash),
+    );
+    let Ok(block_id) = methods::get_block_id(&beta_json_rpc_client, block_reference).await else {
+        return Status::InternalServerError;
+    };
 
-            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    if let Ok(receiver_id) = methods::get_receiver_id(&beta_json_rpc_client, receipt_id).await {
+        state
+            .validators_to_process
+            .write()
+            .await
+            .entry(receiver_id)
+            .and_modify(|prev_block_id| {
+                if *prev_block_id < block_id {
+                    *prev_block_id = block_id;
+                }
+            })
+            .or_insert(block_id);
 
-            if state.tx.send(()).await.is_err() {
-                error!("Failed to send message to the worker");
-            }
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
 
-            break;
+        if state.tx.send(()).await.is_err() {
+            error!("Failed to send message to the worker");
         }
-
-        warn!("Failed to get receiver_id for receipt_id: {receipt_id}. Retrying...");
-        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
     }
 
     Status::Ok
@@ -125,7 +151,7 @@ async fn main() -> Result<()> {
         delegators::ValidatorsWithTimestamp::from(&initial_delegators_state);
 
     let app_state = AppState {
-        accounts_to_process: Arc::new(RwLock::new(BTreeMap::new())),
+        validators_to_process: Arc::new(RwLock::new(BTreeMap::new())),
         delegators_state: Arc::new(RwLock::new(initial_delegators_state)),
         validators_state: Arc::new(RwLock::new(initial_validators_state)),
         tx,
@@ -135,19 +161,48 @@ async fn main() -> Result<()> {
     let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
 
     tokio::spawn(async move {
+        let beta_json_rpc_client = JsonRpcClient::connect("https://beta.rpc.mainnet.near.org");
+
         loop {
             interval.tick().await;
 
             match delegators::get_delegators_from_cache().await {
                 Ok(data) => {
                     if chrono::Utc::now().timestamp() - data.timestamp > 1800 {
-                        if let Err(e) = delegators::update_all_delegators(
-                            &app_state_clone.delegators_state,
-                            &app_state_clone.validators_state,
-                        )
-                        .await
-                        {
-                            error!("Error updating delegators: {}", e);
+                        let block_reference = near_primitives::types::BlockReference::latest();
+
+                        let Ok(block_id) =
+                            methods::get_block_id(&beta_json_rpc_client, block_reference).await
+                        else {
+                            error!("Failed to get block id");
+                            continue;
+                        };
+
+                        let Ok(validators_to_update) =
+                            methods::get_all_validators(&beta_json_rpc_client).await
+                        else {
+                            error!("Failed to get all validators");
+                            continue;
+                        };
+
+                        let mut validators_to_process =
+                            app_state_clone.validators_to_process.write().await;
+
+                        for validator in validators_to_update {
+                            validators_to_process
+                                .entry(validator)
+                                .and_modify(|prev_block_id| {
+                                    if *prev_block_id < block_id {
+                                        *prev_block_id = block_id;
+                                    }
+                                })
+                                .or_insert(block_id);
+                        }
+
+                        drop(validators_to_process);
+
+                        if app_state_clone.tx.send(()).await.is_err() {
+                            error!("Failed to send message to the worker");
                         }
                     }
                 }
@@ -158,31 +213,41 @@ async fn main() -> Result<()> {
 
     let app_state_clone = app_state.clone();
     tokio::spawn(async move {
-        while rx.recv().await.is_some() {
-            let mut accounts_to_process = app_state_clone.accounts_to_process.write().await;
-            let mut account_ids = Vec::new();
+        let beta_json_rpc_client = JsonRpcClient::connect("https://rpc.mainnet.near.org");
 
-            for _ in 0..5 {
-                if let Some(account_id) = accounts_to_process.pop_first() {
-                    account_ids.push(account_id);
-                } else {
-                    break;
-                }
+        while rx.recv().await.is_some() {
+            let mut validators_to_process = BTreeMap::new();
+            std::mem::swap(
+                &mut *app_state_clone.validators_to_process.write().await,
+                &mut validators_to_process,
+            );
+
+            let mut handles = Vec::new();
+
+            for (account_id, block_id) in validators_to_process {
+                let app_state_clone = app_state_clone.clone();
+                let beta_json_rpc_client = beta_json_rpc_client.clone();
+                handles.push(tokio::spawn(async move {
+                    if let Err(e) = delegators::update_delegators_by_validator_account_id(
+                        &beta_json_rpc_client,
+                        &app_state_clone.delegators_state,
+                        &app_state_clone.validators_state,
+                        account_id.clone(),
+                        block_id,
+                    )
+                    .await
+                    {
+                        error!("Error updating delegators: {}", e);
+                    }
+                }));
             }
 
-            drop(accounts_to_process);
+            futures::future::join_all(handles).await;
 
-            for (account_id, block_hash) in account_ids {
-                if let Err(e) = delegators::update_delegators_by_validator_account_id(
-                    &app_state_clone.delegators_state,
-                    &app_state_clone.validators_state,
-                    account_id,
-                    block_hash,
-                )
-                .await
-                {
-                    error!("Error updating delegators: {}", e);
-                }
+            if let Err(e) =
+                delegators::update_delegators_cache(&app_state_clone.delegators_state).await
+            {
+                error!("Error updating delegators cache: {}", e);
             }
         }
     });

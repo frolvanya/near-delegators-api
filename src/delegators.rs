@@ -118,88 +118,65 @@ pub async fn update_delegators_cache(
     Ok(())
 }
 
-pub async fn update_all_delegators(
-    delegators_with_timestamp: &Arc<RwLock<DelegatorsWithTimestamp>>,
-    validators_with_timestamp: &Arc<RwLock<ValidatorsWithTimestamp>>,
-) -> Result<()> {
-    info!("Updating all delegators");
-
-    let updated_delegators =
-        methods::get_all_delegators(&JsonRpcClient::connect("https://beta.rpc.mainnet.near.org"))
-            .await
-            .context("Failed to get all delegators")?;
-
-    info!("Fetched all delegators");
-
-    let timestamp = chrono::Utc::now().timestamp();
-    let mut updated_delegators_with_timestamp = delegators_with_timestamp.write().await;
-
-    if timestamp - updated_delegators_with_timestamp.timestamp < 1800
-        && updated_delegators_with_timestamp.delegators == updated_delegators
-    {
-        info!("Delegators in file are up-to-date");
-        return Ok(());
-    }
-
-    updated_delegators_with_timestamp.timestamp = timestamp;
-    updated_delegators_with_timestamp.delegators = updated_delegators;
-
-    *validators_with_timestamp.write().await =
-        ValidatorsWithTimestamp::from(&updated_delegators_with_timestamp.clone());
-    drop(updated_delegators_with_timestamp);
-
-    info!("Updated all delegators");
-
-    update_delegators_cache(delegators_with_timestamp).await?;
-
-    Ok(())
-}
-
 pub async fn update_delegators_by_validator_account_id(
+    beta_json_rpc_client: &JsonRpcClient,
     delegators_with_timestamp: &Arc<RwLock<DelegatorsWithTimestamp>>,
     validators_with_timestamp: &Arc<RwLock<ValidatorsWithTimestamp>>,
     validator_account_id: String,
-    block_hash: String,
+    block_id: u64,
 ) -> Result<()> {
     info!(
         "Updating delegators for validator: {}",
         validator_account_id
     );
 
-    let block_reference = block_hash
-        .parse::<near_primitives::hash::CryptoHash>()
-        .map(|block_hash| {
-            near_primitives::types::BlockReference::BlockId(near_primitives::types::BlockId::Hash(
-                block_hash,
-            ))
-        })
-        .unwrap_or_else(|_| near_primitives::types::BlockReference::latest());
+    let block_reference = near_primitives::types::BlockReference::BlockId(
+        near_primitives::types::BlockId::Height(block_id),
+    );
 
-    let validator_delegators = methods::get_delegators_by_validator_account_id(
-        &JsonRpcClient::connect("https://beta.rpc.mainnet.near.org"),
-        validator_account_id.clone(),
-        block_reference,
+    for _ in 0..methods::ATTEMPTS {
+        match methods::get_delegators_by_validator_account_id(
+            beta_json_rpc_client,
+            validator_account_id.clone(),
+            block_reference.clone(),
+        )
+        .await
+        {
+            Ok(validator_delegators) => {
+                let timestamp = chrono::Utc::now().timestamp();
+                let mut validators_with_timestamp = validators_with_timestamp.write().await;
+
+                validators_with_timestamp.timestamp = timestamp;
+                validators_with_timestamp
+                    .validators
+                    .insert(validator_account_id.clone(), validator_delegators);
+
+                let updated_delegators_with_timestamp =
+                    DelegatorsWithTimestamp::from(&validators_with_timestamp.clone());
+                drop(validators_with_timestamp);
+
+                *delegators_with_timestamp.write().await =
+                    updated_delegators_with_timestamp.clone();
+
+                info!("Updated delegators for validator: {}", validator_account_id);
+
+                // update_delegators_cache(delegators_with_timestamp).await?;
+
+                return Ok(());
+            }
+            Err(e) => {
+                println!("Error: {:?}", e);
+                warn!(
+                    "Failed to get delegators for validator_account_id: {}. Retrying...",
+                    validator_account_id
+                );
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            }
+        }
+    }
+
+    color_eyre::eyre::bail!(
+        "Failed to get delegators for validator_account_id: {}",
+        validator_account_id
     )
-    .await
-    .context("Failed to get delegators by validator account id")?;
-
-    let timestamp = chrono::Utc::now().timestamp();
-    let mut validators_with_timestamp = validators_with_timestamp.write().await;
-
-    validators_with_timestamp.timestamp = timestamp;
-    validators_with_timestamp
-        .validators
-        .insert(validator_account_id.clone(), validator_delegators);
-
-    let updated_delegators_with_timestamp =
-        DelegatorsWithTimestamp::from(&validators_with_timestamp.clone());
-    drop(validators_with_timestamp);
-
-    *delegators_with_timestamp.write().await = updated_delegators_with_timestamp.clone();
-
-    info!("Updated delegators for validator: {}", validator_account_id);
-
-    update_delegators_cache(delegators_with_timestamp).await?;
-
-    Ok(())
 }
