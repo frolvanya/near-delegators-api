@@ -213,7 +213,7 @@ async fn main() -> Result<()> {
 
     let app_state_clone = app_state.clone();
     tokio::spawn(async move {
-        let beta_json_rpc_client = JsonRpcClient::connect("https://rpc.mainnet.near.org");
+        let json_rpc_client = JsonRpcClient::connect("https://rpc.mainnet.near.org");
 
         while rx.recv().await.is_some() {
             let mut validators_to_process = BTreeMap::new();
@@ -226,7 +226,7 @@ async fn main() -> Result<()> {
 
             for (account_id, block_id) in validators_to_process {
                 let app_state_clone = app_state_clone.clone();
-                let beta_json_rpc_client = beta_json_rpc_client.clone();
+                let beta_json_rpc_client = json_rpc_client.clone();
                 handles.push(tokio::spawn(async move {
                     if let Err(e) = delegators::update_delegators_by_validator_account_id(
                         &beta_json_rpc_client,

@@ -119,7 +119,7 @@ pub async fn update_delegators_cache(
 }
 
 pub async fn update_delegators_by_validator_account_id(
-    beta_json_rpc_client: &JsonRpcClient,
+    json_rpc_client: &JsonRpcClient,
     delegators_with_timestamp: &Arc<RwLock<DelegatorsWithTimestamp>>,
     validators_with_timestamp: &Arc<RwLock<ValidatorsWithTimestamp>>,
     validator_account_id: String,
@@ -136,7 +136,7 @@ pub async fn update_delegators_by_validator_account_id(
 
     for _ in 0..methods::ATTEMPTS {
         match methods::get_delegators_by_validator_account_id(
-            beta_json_rpc_client,
+            json_rpc_client,
             validator_account_id.clone(),
             block_reference.clone(),
         )
