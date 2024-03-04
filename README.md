@@ -4,7 +4,7 @@ This Rust application provides a simple API for managing stake delegators in NEA
 
 ## Endpoints
 
-- **GET Endpoint**: The `/get-delegators` endpoint returns information about delegators in a JSON format.
+- **GET Endpoint**: The `/get-staking-pools` endpoint returns information about delegators in a JSON format.
 
 Example:
 ```bash
@@ -22,7 +22,7 @@ curl https://near-delegators-api.fly.dev/get-delegators
 }
 ```
 
-- **GET Endpoint**: The `/get-delegators/<account-id>` endpoint returns information about all validators for specified delegator.
+- **GET Endpoint**: The `/get-staking-pools/<account-id>` endpoint returns information about all validators for specified delegator.
 
 Example:
 ```bash
@@ -39,7 +39,7 @@ curl https://near-delegators-api.fly.dev/get-delegators/frol.near
 ```
 
 
-- **POST Endpoint**: The `/update-delegators` endpoint allows for the update of delegator information.
+- **POST Endpoint**: The `/update-staking-pools` endpoint allows for the update of delegator information.
 
 ## Deployment on fly.io
 
