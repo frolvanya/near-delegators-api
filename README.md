@@ -8,15 +8,24 @@ This Rust application provides a simple API for managing stake delegators in NEA
 
 Example:
 ```bash
-curl https://near-delegators-api.fly.dev/get-delegators
+http https://near-delegators-api.fly.dev/get-staking-pools
 ```
 
 ```json
 {
-    "timestamp": 1703627160,
-    "delegators": {
-        "frol.near": "qbit.poolv1.near",
-        "frolik.near": "qbit.poolv1.near,staked.poolv1.near",
+    "timestamp": 1709599033,
+    "delegator_staking_pools": {
+        "frol.near": [
+            "qbit.poolv1.near"
+        ],
+        "frolik.near": [
+            "astro-stakers.poolv1.near",
+            "bisontrails2.poolv1.near",
+            "linear-protocol.near",
+            "qbit.poolv1.near",
+            "staked.poolv1.near",
+            "zavodil.poolv1.near"
+        ],
         ...
     }
 }
@@ -26,15 +35,20 @@ curl https://near-delegators-api.fly.dev/get-delegators
 
 Example:
 ```bash
-curl https://near-delegators-api.fly.dev/get-delegators/frol.near
+http https://near-delegators-api.fly.dev/get-staking-pools/frolik.near
 ```
 
 ```json
 {
-    "timestamp": 1703627160,
-    "delegators": {
-        "frol.near": "qbit.poolv1.near",
-    }
+    "delegator_staking_pools": [
+        "astro-stakers.poolv1.near",
+        "bisontrails2.poolv1.near",
+        "linear-protocol.near",
+        "qbit.poolv1.near",
+        "staked.poolv1.near",
+        "zavodil.poolv1.near"
+    ],
+    "timestamp": 1709599415
 }
 ```
 
