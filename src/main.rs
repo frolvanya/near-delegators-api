@@ -7,87 +7,120 @@ extern crate rocket;
 
 use std::io::Write;
 
+use near_jsonrpc_client::JsonRpcClient;
 use rocket::http::Status;
 use rocket::serde::json::Json;
 use rocket::State;
 
 use color_eyre::Result;
-use serde_json::Value;
-use std::collections::{BTreeMap, BTreeSet};
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 use std::sync::Arc;
-use tokio::sync::Mutex;
+use tokio::sync::{mpsc::Sender, RwLock};
+
+#[derive(Debug, Deserialize, Serialize)]
+struct WebhookData {
+    payload: Payload,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct Payload {
+    #[serde(rename = "Actions")]
+    actions: Actions,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct Actions {
+    receipt_id: Option<String>,
+    block_hash: Option<String>,
+}
 
 #[derive(Clone)]
 struct AppState {
-    validators_state: Arc<Mutex<delegators::ValidatorsWithTimestamp>>,
-    delegators_state: Arc<Mutex<delegators::DelegatorsWithTimestamp>>,
+    validators_to_process: Arc<RwLock<BTreeMap<String, u64>>>,
+    validators_state: Arc<RwLock<delegators::ValidatorsWithTimestamp>>,
+    delegators_state: Arc<RwLock<delegators::DelegatorsWithTimestamp>>,
+    tx: Sender<()>,
 }
 
-#[get("/get-delegators")]
+#[get("/get-staking-pools")]
 async fn get_all(state: &State<AppState>) -> Json<delegators::DelegatorsWithTimestamp> {
     info!("GET request received");
 
-    Json(state.delegators_state.lock().await.clone())
+    Json(state.delegators_state.read().await.clone())
 }
 
-#[get("/get-delegators/<account_id>")]
+#[get("/get-staking-pools/<account_id>")]
 async fn get_by_account_id(
     account_id: &str,
     state: &State<AppState>,
-) -> (Status, Json<delegators::DelegatorsWithTimestamp>) {
+) -> Result<(Status, Json<delegators::DelegatorWithTimestamp>), Status> {
     info!("GET by account id request received");
 
-    let locked_delegators_state = state.delegators_state.lock().await;
+    let locked_delegators_state = state.delegators_state.read().await;
 
     locked_delegators_state
-        .delegators
+        .delegator_staking_pools
         .get(account_id)
         .map_or_else(
-            || {
-                (
-                    Status::InternalServerError,
-                    Json(delegators::DelegatorsWithTimestamp::default()),
-                )
-            },
+            || Err(Status::new(503)),
             |delegators| {
-                let mut delegators_map = BTreeMap::<String, BTreeSet<String>>::new();
-                delegators_map.insert(account_id.to_string(), delegators.clone());
-                (
+                Ok((
                     Status::Ok,
-                    Json(delegators::DelegatorsWithTimestamp {
+                    Json(delegators::DelegatorWithTimestamp {
                         timestamp: locked_delegators_state.timestamp,
-                        delegators: delegators_map,
+                        delegator_staking_pools: delegators.clone(),
                     }),
-                )
+                ))
             },
         )
 }
 
-#[post("/update-delegators", data = "<data>")]
-async fn update(data: Json<Value>, state: &State<AppState>) -> Status {
+#[post("/update-staking-pools", data = "<data>")]
+async fn update(data: Json<WebhookData>, state: &State<AppState>) -> Status {
     info!("POST request received");
 
-    let receipt_id = data["payload"]["Actions"]["receipt_id"].as_str();
+    let Some(receipt_id) = data.payload.actions.receipt_id.clone() else {
+        return Status::InternalServerError;
+    };
+    let Some(block_hash) = data.payload.actions.block_hash.clone() else {
+        return Status::InternalServerError;
+    };
+    let Ok(block_hash) = block_hash.parse::<near_primitives::hash::CryptoHash>() else {
+        return Status::InternalServerError;
+    };
 
-    match delegators::update_delegators_cache(
-        &state.delegators_state,
-        &state.validators_state,
-        receipt_id,
-    )
-    .await
-    {
-        Ok((updated_delegators, updated_validators)) => {
-            *state.delegators_state.lock().await = updated_delegators;
-            *state.validators_state.lock().await = updated_validators;
+    let beta_json_rpc_client = JsonRpcClient::connect("https://beta.rpc.mainnet.near.org");
 
-            Status::Ok
-        }
-        Err(e) => {
-            error!("Error processing POST request: {}", e);
-            Status::InternalServerError
+    let block_reference = near_primitives::types::BlockReference::BlockId(
+        near_primitives::types::BlockId::Hash(block_hash),
+    );
+    let Ok(block_id) = methods::get_block_id(&beta_json_rpc_client, block_reference).await else {
+        return Status::InternalServerError;
+    };
+
+    if let Ok(receiver_id) = methods::get_receiver_id(&beta_json_rpc_client, receipt_id).await {
+        state
+            .validators_to_process
+            .write()
+            .await
+            .entry(receiver_id)
+            .and_modify(|prev_block_id| {
+                if *prev_block_id < block_id {
+                    *prev_block_id = block_id;
+                }
+            })
+            .or_insert(block_id);
+
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+
+        if state.tx.send(()).await.is_err() {
+            error!("Failed to send message to the worker");
         }
     }
+
+    Status::Ok
 }
 
 #[tokio::main]
@@ -106,6 +139,8 @@ async fn main() -> Result<()> {
         .filter(None, log::LevelFilter::Info)
         .init();
 
+    let (tx, mut rx) = tokio::sync::mpsc::channel(100);
+
     let initial_delegators_state = delegators::get_delegators_from_cache()
         .await
         .unwrap_or_default();
@@ -113,38 +148,100 @@ async fn main() -> Result<()> {
         delegators::ValidatorsWithTimestamp::from(&initial_delegators_state);
 
     let app_state = AppState {
-        delegators_state: Arc::new(Mutex::new(initial_delegators_state)),
-        validators_state: Arc::new(Mutex::new(initial_validators_state)),
+        validators_to_process: Arc::new(RwLock::new(BTreeMap::new())),
+        delegators_state: Arc::new(RwLock::new(initial_delegators_state)),
+        validators_state: Arc::new(RwLock::new(initial_validators_state)),
+        tx,
     };
     let app_state_clone = app_state.clone();
 
     let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
 
     tokio::spawn(async move {
+        let beta_json_rpc_client = JsonRpcClient::connect("https://beta.rpc.mainnet.near.org");
+
         loop {
             interval.tick().await;
 
-            match delegators::get_delegators_from_cache().await {
-                Ok(data) => {
-                    if chrono::Utc::now().timestamp() - data.timestamp > 1800 {
-                        match delegators::update_delegators_cache(
-                            &app_state_clone.delegators_state,
-                            &app_state_clone.validators_state,
-                            None,
-                        )
-                        .await
-                        {
-                            Ok((updated_delegators, updated_validators)) => {
-                                *app_state_clone.delegators_state.lock().await = updated_delegators;
-                                *app_state_clone.validators_state.lock().await = updated_validators;
+            if chrono::Utc::now().timestamp()
+                - app_state_clone.delegators_state.read().await.timestamp
+                > 1800
+            {
+                let block_reference = near_primitives::types::Finality::Final.into();
+
+                let Ok(block_id) =
+                    methods::get_block_id(&beta_json_rpc_client, block_reference).await
+                else {
+                    error!("Failed to get block id");
+                    continue;
+                };
+
+                let Ok(validators_to_update) =
+                    methods::get_all_validators(&beta_json_rpc_client).await
+                else {
+                    error!("Failed to get all validators");
+                    continue;
+                };
+
+                let mut validators_to_process = app_state_clone.validators_to_process.write().await;
+
+                for validator in validators_to_update {
+                    validators_to_process
+                        .entry(validator)
+                        .and_modify(|prev_block_id| {
+                            if *prev_block_id < block_id {
+                                *prev_block_id = block_id;
                             }
-                            Err(e) => {
-                                error!("Error updating delegators: {}", e);
-                            }
-                        }
-                    }
+                        })
+                        .or_insert(block_id);
                 }
-                Err(e) => error!("Error updating delegators: {}", e),
+
+                drop(validators_to_process);
+
+                if app_state_clone.tx.send(()).await.is_err() {
+                    error!("Failed to send message to the worker");
+                }
+            }
+        }
+    });
+
+    let app_state_clone = app_state.clone();
+    tokio::spawn(async move {
+        let json_rpc_client = JsonRpcClient::connect("https://rpc.mainnet.near.org");
+
+        while rx.recv().await.is_some() {
+            let mut validators_to_process = BTreeMap::new();
+            std::mem::swap(
+                &mut *app_state_clone.validators_to_process.write().await,
+                &mut validators_to_process,
+            );
+
+            let mut handles = Vec::new();
+
+            for (account_id, block_id) in validators_to_process {
+                let app_state_clone = app_state_clone.clone();
+                let beta_json_rpc_client = json_rpc_client.clone();
+                handles.push(tokio::spawn(async move {
+                    if let Err(e) = delegators::update_delegators_by_validator_account_id(
+                        &beta_json_rpc_client,
+                        &app_state_clone.delegators_state,
+                        &app_state_clone.validators_state,
+                        account_id.clone(),
+                        block_id,
+                    )
+                    .await
+                    {
+                        error!("Error updating delegators: {}", e);
+                    }
+                }));
+            }
+
+            futures::future::join_all(handles).await;
+
+            if let Err(e) =
+                delegators::update_delegators_cache(&app_state_clone.delegators_state).await
+            {
+                error!("Error updating delegators cache: {}", e);
             }
         }
     });

@@ -4,42 +4,56 @@ This Rust application provides a simple API for managing stake delegators in NEA
 
 ## Endpoints
 
-- **GET Endpoint**: The `/get-delegators` endpoint returns information about delegators in a JSON format.
+- **GET Endpoint**: The `/get-staking-pools` endpoint returns information about delegators in a JSON format.
 
 Example:
 ```bash
-curl https://near-delegators-api.fly.dev/get-delegators
+http https://near-delegators-api.fly.dev/get-staking-pools
 ```
 
 ```json
 {
-    "timestamp": 1703627160,
-    "delegators": {
-        "frol.near": "qbit.poolv1.near",
-        "frolik.near": "qbit.poolv1.near,staked.poolv1.near",
+    "timestamp": 1709599033,
+    "delegator_staking_pools": {
+        "frol.near": [
+            "qbit.poolv1.near"
+        ],
+        "frolik.near": [
+            "astro-stakers.poolv1.near",
+            "bisontrails2.poolv1.near",
+            "linear-protocol.near",
+            "qbit.poolv1.near",
+            "staked.poolv1.near",
+            "zavodil.poolv1.near"
+        ],
         ...
     }
 }
 ```
 
-- **GET Endpoint**: The `/get-delegators/<account-id>` endpoint returns information about all validators for specified delegator.
+- **GET Endpoint**: The `/get-staking-pools/<account-id>` endpoint returns information about all validators for specified delegator.
 
 Example:
 ```bash
-curl https://near-delegators-api.fly.dev/get-delegators/frol.near
+http https://near-delegators-api.fly.dev/get-staking-pools/frolik.near
 ```
 
 ```json
 {
-    "timestamp": 1703627160,
-    "delegators": {
-        "frol.near": "qbit.poolv1.near",
-    }
+    "delegator_staking_pools": [
+        "astro-stakers.poolv1.near",
+        "bisontrails2.poolv1.near",
+        "linear-protocol.near",
+        "qbit.poolv1.near",
+        "staked.poolv1.near",
+        "zavodil.poolv1.near"
+    ],
+    "timestamp": 1709599415
 }
 ```
 
 
-- **POST Endpoint**: The `/update-delegators` endpoint allows for the update of delegator information.
+- **POST Endpoint**: The `/update-staking-pools` endpoint allows for the update of delegator information.
 
 ## Deployment on fly.io
 
