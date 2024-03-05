@@ -64,6 +64,13 @@ impl From<&ValidatorsWithTimestamp> for DelegatorsWithTimestamp {
     }
 }
 
+#[derive(Debug, serde::Serialize, serde::Deserialize, Default, Clone)]
+#[serde(crate = "rocket::serde")]
+pub struct DelegatorWithTimestamp {
+    pub timestamp: i64,
+    pub delegator_staking_pools: BTreeSet<String>,
+}
+
 pub async fn with_json_file_cache() -> Result<tokio::fs::File> {
     let path = format!("/mnt/{DELEGATORS_FILENAME}");
 
@@ -135,41 +142,37 @@ pub async fn update_delegators_by_validator_account_id(
     );
 
     for _ in 0..methods::ATTEMPTS {
-        match methods::get_delegators_by_validator_account_id(
+        if let Ok(validator_delegators) = methods::get_delegators_by_validator_account_id(
             json_rpc_client,
             validator_account_id.clone(),
             block_reference.clone(),
         )
         .await
         {
-            Ok(validator_delegators) => {
-                let timestamp = chrono::Utc::now().timestamp();
-                let mut validators_with_timestamp = validators_with_timestamp.write().await;
+            let timestamp = chrono::Utc::now().timestamp();
+            let mut validators_with_timestamp = validators_with_timestamp.write().await;
 
-                validators_with_timestamp.timestamp = timestamp;
-                validators_with_timestamp
-                    .validator_staking_pools
-                    .insert(validator_account_id.clone(), validator_delegators);
+            validators_with_timestamp.timestamp = timestamp;
+            validators_with_timestamp
+                .validator_staking_pools
+                .insert(validator_account_id.clone(), validator_delegators);
 
-                let updated_delegators_with_timestamp =
-                    DelegatorsWithTimestamp::from(&validators_with_timestamp.clone());
-                drop(validators_with_timestamp);
+            let updated_delegators_with_timestamp =
+                DelegatorsWithTimestamp::from(&validators_with_timestamp.clone());
+            drop(validators_with_timestamp);
 
-                *delegators_with_timestamp.write().await =
-                    updated_delegators_with_timestamp.clone();
+            *delegators_with_timestamp.write().await = updated_delegators_with_timestamp.clone();
 
-                info!("Updated delegators for validator: {}", validator_account_id);
+            info!("Updated delegators for validator: {}", validator_account_id);
 
-                return Ok(());
-            }
-            Err(_) => {
-                warn!(
-                    "Failed to get delegators for validator_account_id: {}. Retrying...",
-                    validator_account_id
-                );
-                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-            }
+            return Ok(());
         }
+
+        warn!(
+            "Failed to get delegators for validator_account_id: {}. Retrying...",
+            validator_account_id
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
     }
 
     color_eyre::eyre::bail!(

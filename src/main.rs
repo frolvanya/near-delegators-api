@@ -14,7 +14,7 @@ use rocket::State;
 
 use color_eyre::Result;
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use std::sync::Arc;
 use tokio::sync::{mpsc::Sender, RwLock};
@@ -55,7 +55,7 @@ async fn get_all(state: &State<AppState>) -> Json<delegators::DelegatorsWithTime
 async fn get_by_account_id(
     account_id: &str,
     state: &State<AppState>,
-) -> Result<(Status, Json<delegators::DelegatorsWithTimestamp>), Status> {
+) -> Result<(Status, Json<delegators::DelegatorWithTimestamp>), Status> {
     info!("GET by account id request received");
 
     let locked_delegators_state = state.delegators_state.read().await;
@@ -66,14 +66,11 @@ async fn get_by_account_id(
         .map_or_else(
             || Err(Status::new(503)),
             |delegators| {
-                let mut delegators_map = BTreeMap::<String, BTreeSet<String>>::new();
-                delegators_map.insert(account_id.to_string(), delegators.clone());
-
                 Ok((
                     Status::Ok,
-                    Json(delegators::DelegatorsWithTimestamp {
+                    Json(delegators::DelegatorWithTimestamp {
                         timestamp: locked_delegators_state.timestamp,
-                        delegator_staking_pools: delegators_map,
+                        delegator_staking_pools: delegators.clone(),
                     }),
                 ))
             },
