@@ -14,14 +14,14 @@ pub const DELEGATORS_FILENAME: &str = "delegators.json";
 #[derive(Debug, Clone, Default)]
 pub struct ValidatorsWithTimestamp {
     pub timestamp: i64,
-    pub validators: BTreeMap<String, BTreeSet<String>>,
+    pub validator_staking_pools: BTreeMap<String, BTreeSet<String>>,
 }
 
 impl From<&DelegatorsWithTimestamp> for ValidatorsWithTimestamp {
     fn from(delegators: &DelegatorsWithTimestamp) -> Self {
         let mut validators_map = BTreeMap::<String, BTreeSet<String>>::new();
 
-        for (delegator, validators) in &delegators.delegators {
+        for (delegator, validators) in &delegators.delegator_staking_pools {
             for validator in validators {
                 validators_map
                     .entry(validator.to_string())
@@ -32,7 +32,7 @@ impl From<&DelegatorsWithTimestamp> for ValidatorsWithTimestamp {
 
         Self {
             timestamp: delegators.timestamp,
-            validators: validators_map,
+            validator_staking_pools: validators_map,
         }
     }
 }
@@ -41,14 +41,14 @@ impl From<&DelegatorsWithTimestamp> for ValidatorsWithTimestamp {
 #[serde(crate = "rocket::serde")]
 pub struct DelegatorsWithTimestamp {
     pub timestamp: i64,
-    pub delegators: BTreeMap<String, BTreeSet<String>>,
+    pub delegator_staking_pools: BTreeMap<String, BTreeSet<String>>,
 }
 
 impl From<&ValidatorsWithTimestamp> for DelegatorsWithTimestamp {
     fn from(validators: &ValidatorsWithTimestamp) -> Self {
         let mut delegators_map = BTreeMap::<String, BTreeSet<String>>::new();
 
-        for (validator, delegators) in &validators.validators {
+        for (validator, delegators) in &validators.validator_staking_pools {
             for delegator in delegators {
                 delegators_map
                     .entry(delegator.to_string())
@@ -59,7 +59,7 @@ impl From<&ValidatorsWithTimestamp> for DelegatorsWithTimestamp {
 
         Self {
             timestamp: validators.timestamp,
-            delegators: delegators_map,
+            delegator_staking_pools: delegators_map,
         }
     }
 }
@@ -148,7 +148,7 @@ pub async fn update_delegators_by_validator_account_id(
 
                 validators_with_timestamp.timestamp = timestamp;
                 validators_with_timestamp
-                    .validators
+                    .validator_staking_pools
                     .insert(validator_account_id.clone(), validator_delegators);
 
                 let updated_delegators_with_timestamp =
@@ -160,12 +160,9 @@ pub async fn update_delegators_by_validator_account_id(
 
                 info!("Updated delegators for validator: {}", validator_account_id);
 
-                // update_delegators_cache(delegators_with_timestamp).await?;
-
                 return Ok(());
             }
-            Err(e) => {
-                println!("Error: {:?}", e);
+            Err(_) => {
                 warn!(
                     "Failed to get delegators for validator_account_id: {}. Retrying...",
                     validator_account_id

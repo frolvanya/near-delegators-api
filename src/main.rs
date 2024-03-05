@@ -61,7 +61,7 @@ async fn get_by_account_id(
     let locked_delegators_state = state.delegators_state.read().await;
 
     locked_delegators_state
-        .delegators
+        .delegator_staking_pools
         .get(account_id)
         .map_or_else(
             || Err(Status::new(503)),
@@ -73,7 +73,7 @@ async fn get_by_account_id(
                     Status::Ok,
                     Json(delegators::DelegatorsWithTimestamp {
                         timestamp: locked_delegators_state.timestamp,
-                        delegators: delegators_map,
+                        delegator_staking_pools: delegators_map,
                     }),
                 ))
             },
@@ -166,47 +166,44 @@ async fn main() -> Result<()> {
         loop {
             interval.tick().await;
 
-            match delegators::get_delegators_from_cache().await {
-                Ok(data) => {
-                    if chrono::Utc::now().timestamp() - data.timestamp > 1800 {
-                        let block_reference = near_primitives::types::BlockReference::latest();
+            if chrono::Utc::now().timestamp()
+                - app_state_clone.delegators_state.read().await.timestamp
+                > 1800
+            {
+                let block_reference = near_primitives::types::Finality::Final.into();
 
-                        let Ok(block_id) =
-                            methods::get_block_id(&beta_json_rpc_client, block_reference).await
-                        else {
-                            error!("Failed to get block id");
-                            continue;
-                        };
+                let Ok(block_id) =
+                    methods::get_block_id(&beta_json_rpc_client, block_reference).await
+                else {
+                    error!("Failed to get block id");
+                    continue;
+                };
 
-                        let Ok(validators_to_update) =
-                            methods::get_all_validators(&beta_json_rpc_client).await
-                        else {
-                            error!("Failed to get all validators");
-                            continue;
-                        };
+                let Ok(validators_to_update) =
+                    methods::get_all_validators(&beta_json_rpc_client).await
+                else {
+                    error!("Failed to get all validators");
+                    continue;
+                };
 
-                        let mut validators_to_process =
-                            app_state_clone.validators_to_process.write().await;
+                let mut validators_to_process = app_state_clone.validators_to_process.write().await;
 
-                        for validator in validators_to_update {
-                            validators_to_process
-                                .entry(validator)
-                                .and_modify(|prev_block_id| {
-                                    if *prev_block_id < block_id {
-                                        *prev_block_id = block_id;
-                                    }
-                                })
-                                .or_insert(block_id);
-                        }
-
-                        drop(validators_to_process);
-
-                        if app_state_clone.tx.send(()).await.is_err() {
-                            error!("Failed to send message to the worker");
-                        }
-                    }
+                for validator in validators_to_update {
+                    validators_to_process
+                        .entry(validator)
+                        .and_modify(|prev_block_id| {
+                            if *prev_block_id < block_id {
+                                *prev_block_id = block_id;
+                            }
+                        })
+                        .or_insert(block_id);
                 }
-                Err(e) => error!("Error updating delegators: {}", e),
+
+                drop(validators_to_process);
+
+                if app_state_clone.tx.send(()).await.is_err() {
+                    error!("Failed to send message to the worker");
+                }
             }
         }
     });

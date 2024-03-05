@@ -111,40 +111,6 @@ pub async fn get_all_validators(beta_json_rpc_client: &JsonRpcClient) -> Result<
     }
 }
 
-// async fn get_number_of_delegators(
-//     beta_json_rpc_client: &JsonRpcClient,
-//     block_reference: near_primitives::types::BlockReference,
-//     validator_account_id: String,
-// ) -> Result<usize> {
-//     for _ in 0..ATTEMPTS {
-//         let Ok(delegators_response) = beta_json_rpc_client
-//             .call(near_jsonrpc_client::methods::query::RpcQueryRequest {
-//                 block_reference: block_reference.clone(),
-//                 request: near_primitives::views::QueryRequest::CallFunction {
-//                     account_id: validator_account_id.parse()?,
-//                     method_name: "get_number_of_accounts".to_string(),
-//                     args: near_primitives::types::FunctionArgs::from(serde_json::to_vec(
-//                         &serde_json::json!(null),
-//                     )?),
-//                 },
-//             })
-//             .await else {
-//                 warn!("Failed to get number of delegators for validator_account_id: {validator_account_id}. Retrying...");
-//                 tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-//                 continue;
-//             };
-
-//         return delegators_response
-//             .call_result()?
-//             .parse_result_from_json::<usize>()
-//             .context("Failed to parse delegators");
-//     }
-
-//     color_eyre::eyre::bail!(
-//         "Failed to get number of delegators for validator_account_id: {validator_account_id}"
-//     )
-// }
-
 async fn get_number_of_delegators(
     beta_json_rpc_client: &JsonRpcClient,
     block_reference: near_primitives::types::BlockReference,
