@@ -8,7 +8,8 @@ This Rust application provides a simple API for managing stake delegators in NEA
 
 Example:
 ```bash
-http https://near-delegators-api.fly.dev/get-staking-pools
+
+http https://near-delegators-api.shuttleapp.rs/get-staking-pools
 ```
 
 ```json
@@ -35,7 +36,7 @@ http https://near-delegators-api.fly.dev/get-staking-pools
 
 Example:
 ```bash
-http https://near-delegators-api.fly.dev/get-staking-pools/frolik.near
+http https://near-delegators-api.shuttleapp.rs/get-staking-pools/frolik.near
 ```
 
 ```json
@@ -53,7 +54,23 @@ http https://near-delegators-api.fly.dev/get-staking-pools/frolik.near
 ```
 
 
-- **POST Endpoint**: The `/update-staking-pools` endpoint allows for the update of delegator information.
+- **POST Endpoint**: The `/update-staking-pools` endpoint allows for the update of delegator information
+
+Expected payload:
+```json
+{
+    "chain_id": "Mainnet",
+    "alert_rule_id": 361,
+    "alert_name": "Successful action in *.poolv1.near",
+    "payload": {
+        "Actions": {
+            "block_hash": "9R9oPcCtUyXcYmQnq89vwsiBExVyfapcD77osqdUHGhT",
+            "receipt_id": "4VNyXQdiHWD79rvWhLqmBr6FqrRndsbpQbBV7dUSjpov",
+            "transaction_hash": "DTtiZnEeA8YQSjhtmHMBozrQFepevmtg1wzxq62qvroD"
+        }
+    }
+}
+```
 
 ## Setting up
 
