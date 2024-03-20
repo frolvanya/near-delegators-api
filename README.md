@@ -8,7 +8,6 @@ This Rust application provides a simple API for managing stake delegators in NEA
 
 Example:
 ```bash
-
 http https://near-delegators-api.shuttleapp.rs/get-staking-pools
 ```
 
