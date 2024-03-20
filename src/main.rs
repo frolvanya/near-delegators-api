@@ -140,6 +140,7 @@ async fn rocket(
             )
         })
         .filter(None, log::LevelFilter::Info)
+        .target(pretty_env_logger::env_logger::fmt::Target::Stdout)
         .init();
 
     let (tx, mut rx) = tokio::sync::mpsc::channel(100);
