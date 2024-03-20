@@ -1,15 +1,11 @@
 use crate::methods;
 
-use color_eyre::{eyre::Context, Result};
+use color_eyre::Result;
 use near_jsonrpc_client::JsonRpcClient;
 use std::collections::{BTreeMap, BTreeSet};
 
 use std::sync::Arc;
 use tokio::sync::RwLock;
-
-use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
-
-pub const DELEGATORS_FILENAME: &str = "delegators.json";
 
 #[derive(Debug, Clone, Default)]
 pub struct ValidatorsWithTimestamp {
@@ -69,60 +65,6 @@ impl From<&ValidatorsWithTimestamp> for DelegatorsWithTimestamp {
 pub struct DelegatorWithTimestamp {
     pub timestamp: i64,
     pub delegator_staking_pools: BTreeSet<String>,
-}
-
-pub async fn with_json_file_cache() -> Result<tokio::fs::File> {
-    let path = format!("/mnt/{DELEGATORS_FILENAME}");
-
-    tokio::fs::OpenOptions::new()
-        .read(true)
-        .write(true)
-        .create(true)
-        .open(path)
-        .await
-        .context("Failed to open file")
-}
-
-pub async fn get_delegators_from_cache() -> Result<DelegatorsWithTimestamp> {
-    let mut content = String::new();
-
-    let mut file = with_json_file_cache().await?;
-    file.read_to_string(&mut content)
-        .await
-        .context("Failed to read from file")?;
-
-    Ok(serde_json::from_str(&content).map_or_else(
-        |_| {
-            info!("File is empty");
-            DelegatorsWithTimestamp::default()
-        },
-        |data| data,
-    ))
-}
-
-pub async fn update_delegators_cache(
-    delegators_with_timestamp: &Arc<RwLock<DelegatorsWithTimestamp>>,
-) -> Result<()> {
-    let updated_delegators_json =
-        serde_json::to_string_pretty(&delegators_with_timestamp.read().await.clone())?;
-
-    let mut file = with_json_file_cache().await?;
-
-    file.seek(std::io::SeekFrom::Start(0))
-        .await
-        .context("Failed to seek to the beginning of the file")?;
-
-    file.set_len(0)
-        .await
-        .context("Failed to truncate the file")?;
-
-    file.write_all(updated_delegators_json.as_bytes())
-        .await
-        .context("Failed to write to file")?;
-
-    info!("Updated delegators file");
-
-    Ok(())
 }
 
 pub async fn update_delegators_by_validator_account_id(

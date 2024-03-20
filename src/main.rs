@@ -7,13 +7,15 @@ extern crate rocket;
 
 use std::io::Write;
 
+use color_eyre::Result;
+
 use near_jsonrpc_client::JsonRpcClient;
 use rocket::http::Status;
 use rocket::serde::json::Json;
 use rocket::State;
 
-use color_eyre::Result;
 use serde::{Deserialize, Serialize};
+use shuttle_persist::PersistInstance;
 use std::collections::BTreeMap;
 
 use std::sync::Arc;
@@ -123,9 +125,10 @@ async fn update(data: Json<WebhookData>, state: &State<AppState>) -> Status {
     Status::Ok
 }
 
-#[tokio::main]
-#[allow(clippy::no_effect_underscore_binding)]
-async fn main() -> Result<()> {
+#[shuttle_runtime::main]
+async fn rocket(
+    #[shuttle_persist::Persist] persist: PersistInstance,
+) -> shuttle_rocket::ShuttleRocket {
     pretty_env_logger::formatted_timed_builder()
         .format(|buf, record| {
             writeln!(
@@ -141,11 +144,15 @@ async fn main() -> Result<()> {
 
     let (tx, mut rx) = tokio::sync::mpsc::channel(100);
 
-    let initial_delegators_state = delegators::get_delegators_from_cache()
-        .await
-        .unwrap_or_default();
-    let initial_validators_state =
-        delegators::ValidatorsWithTimestamp::from(&initial_delegators_state);
+    let mut initial_delegators_state = delegators::DelegatorsWithTimestamp::default();
+    let mut initial_validators_state = delegators::ValidatorsWithTimestamp::default();
+
+    if let Ok(delegators_state) =
+        persist.load::<delegators::DelegatorsWithTimestamp>("delegators_state")
+    {
+        initial_delegators_state = delegators_state.clone();
+        initial_validators_state = delegators::ValidatorsWithTimestamp::from(&delegators_state);
+    }
 
     let app_state = AppState {
         validators_to_process: Arc::new(RwLock::new(BTreeMap::new())),
@@ -238,19 +245,18 @@ async fn main() -> Result<()> {
 
             futures::future::join_all(handles).await;
 
-            if let Err(e) =
-                delegators::update_delegators_cache(&app_state_clone.delegators_state).await
-            {
-                error!("Error updating delegators cache: {}", e);
+            if let Err(e) = persist.save(
+                "delegators_state",
+                &*app_state_clone.delegators_state.read().await,
+            ) {
+                error!("Error saving delegators state: {}", e);
             }
         }
     });
 
-    let _ = rocket::build()
+    let rocket = rocket::build()
         .mount("/", routes![get_all, get_by_account_id, update])
-        .manage(app_state)
-        .launch()
-        .await;
+        .manage(app_state);
 
-    Ok(())
+    Ok(rocket.into())
 }
