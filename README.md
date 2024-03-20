@@ -55,51 +55,59 @@ http https://near-delegators-api.fly.dev/get-staking-pools/frolik.near
 
 - **POST Endpoint**: The `/update-staking-pools` endpoint allows for the update of delegator information.
 
-## Deployment on fly.io
+## Setting up
 
-Firstly, you need to create an account and authenticate:
+### Pagoda Console Alerts
 
-```bash
-fly auth
-```
+Firstly, you need to subscribe for updates using [Pagoda Console](https://console.pagoda.co/). It has configurable alerts to send POST request to the deployed application whenever a new successful action happens on target *.poolv1.near  
 
-Then simply run launch command:
-
-![launch](images/fly-launch.png)
-
-> To ensure high availability, especially for production apps, fly.io strongly recommend running at least 2 machines. You can scale up the number of machines using the fly scale command in the CLI. Check out the [documentation](https://fly.io/docs/apps/scale-count/#scale-the-number-of-machines-in-a-single-region) for more details.
-
-Use show command to view current resources:
-
-```bash
-fly scale show
-```
-
-And count command to scale your app:
-
-```bash
-fly scale count 2
-```
-
-In case you want to redeploy application:
-
-```bash
-fly deploy
-```
-
-You also can view logs via cli or fly.io dashboard:
-
-```bash
-fly logs -a near-delegators-api
-```
-The application logs requests and errors using the `pretty_env_logger` crate and provides timestamped logs in a readable format.
-
-The API will be accessible at generated fly.io link.
-
-## Pagoda Console Alerts
-
-You can either call webhook by yourself or use [Pagoda Console](https://console.pagoda.co/) to send POST request to the deployed application if new successful action happens on target *.poolv1.near  
 Here's a suggested configuration:
 
 ![pagoda console](images/pagoda-console.png)
 Feel free to customize and extend the functionality based on your specific use case.
+
+
+### Deployment on shuttle.rs
+
+#### Installation
+
+```bash
+cargo install cargo-shuttle
+```
+
+#### Creating your project
+
+```bash
+cargo shuttle init
+```
+
+#### Deployment
+
+1) Start project
+```bash
+cargo shuttle project start
+```
+
+2) Deploy
+```bash
+cargo shuttle deploy --allow-dirty
+```
+> [!NOTE]  
+> `--allow-dirty` or `--ad` allows deploying with uncommitted git changes
+
+#### Status
+```bash
+cargo shuttle status
+```
+
+#### Logs
+
+```bash
+cargo shuttle logs --follow
+```
+
+You also can view logs on shuttle.rs dashboard:
+
+The application logs requests and errors using the `pretty_env_logger` crate and provides timestamped logs in a readable format.
+
+The API will be accessible at generated shuttle.rs link.
